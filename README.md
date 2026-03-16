@@ -1,36 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Job Market Tracker
 
-## Getting Started
+Small Next.js dashboard for exploring US software and data job listings with lightweight filtering and trend views.
 
-First, run the development server:
+This is a study project for practicing Cursor best practices, the BMAD method, and Codex CLI workflows. I made it for fun.
+
+## What It Does
+
+- Fetches job data from a local API route at `/api/jobs`
+- Displays top-level counts for total, SWE, and data roles
+- Filters listings by role type and work mode
+- Shows work mode distribution and posting volume over time
+- Renders a table of individual roles with salary, posting date, and tech stack
+
+## Current State
+
+This app currently runs on sample data stored in [`data/jobs-sample.json`](./data/jobs-sample.json). The API layer in [`src/app/api/jobs/route.ts`](./src/app/api/jobs/route.ts) returns that dataset directly with a fresh `fetchedAt` timestamp.
+
+## Tech Stack
+
+- Next.js 14
+- React 18
+- TypeScript
+- Tailwind CSS 4
+- Recharts
+
+## Run Locally
+
+Install dependencies and start the development server:
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Available Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `npm run dev` starts the local development server
+- `npm run build` creates a production build
+- `npm run start` serves the production build
+- `npm run lint` runs ESLint
 
-## Learn More
+## Project Structure
 
-To learn more about Next.js, take a look at the following resources:
+```text
+src/
+  app/
+    api/jobs/route.ts   API endpoint for job data
+    page.tsx            Dashboard UI
+    layout.tsx          App shell and metadata
+    globals.css         Global styles
+  lib/
+    jobs.ts             Shared job types
+data/
+  jobs-sample.json      Local sample dataset
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Notes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- The dashboard is client-rendered and fetches from the local API on load.
+- Refreshing data currently re-reads the same sample dataset rather than pulling from an external source.
+- App metadata in [`src/app/layout.tsx`](./src/app/layout.tsx) is still generic and should be updated if this project is published.
 
-## Deploy on Vercel
+## Next Improvements
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Replace the sample dataset with a real ingestion pipeline
+- Add source links and job detail views
+- Support more filters such as seniority, location, and salary range
+- Persist snapshots so trend charts reflect historical crawls instead of sample timestamps
