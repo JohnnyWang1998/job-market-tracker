@@ -1,12 +1,23 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import type { Job, RoleType, WorkMode } from "@/lib/jobs";
 
 interface JobsResponse {
   jobs: Job[];
   fetchedAt: string;
 }
+
+type TimeRange = 7 | 14 | 30;
 
 export default function Home() {
   const [data, setData] = useState<JobsResponse | null>(null);
@@ -16,6 +27,7 @@ export default function Home() {
   const [workModeFilter, setWorkModeFilter] = useState<WorkMode | "all">(
     "all",
   );
+  const [timeRange, setTimeRange] = useState<TimeRange>(14);
 
   const fetchJobs = async () => {
     try {
@@ -67,6 +79,43 @@ export default function Home() {
   const lastUpdated = data?.fetchedAt
     ? new Date(data.fetchedAt).toLocaleTimeString()
     : null;
+
+  const dailySeries = useMemo(() => {
+    if (!filteredJobs.length) return [];
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const days: { dateLabel: string; key: string; count: number }[] = [];
+
+    for (let i = timeRange - 1; i >= 0; i -= 1) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      const dateLabel = d.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+      });
+      days.push({ dateLabel, key, count: 0 });
+    }
+
+    const indexByKey = new Map(days.map((d, idx) => [d.key, idx]));
+    for (const job of filteredJobs) {
+      const d = new Date(job.postedAt);
+      d.setHours(0, 0, 0, 0);
+      const key = d.toISOString().slice(0, 10);
+      const idx = indexByKey.get(key);
+      if (idx !== undefined) {
+        days[idx].count += 1;
+      }
+    }
+
+    return days;
+  }, [filteredJobs, timeRange]);
+
+  const maxDailyCount =
+    dailySeries.length > 0
+      ? Math.max(...dailySeries.map((d) => d.count), 1)
+      : 1;
 
   return (
     <div className="min-h-screen bg-zinc-50 px-4 py-8 font-sans text-zinc-900 dark:bg-black dark:text-zinc-50">
@@ -223,6 +272,80 @@ export default function Home() {
               );
             })}
           </div>
+        </section>
+
+        {/* Line chart: roles over time */}
+        <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold">Roles over time</h2>
+            <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+              <span>Range</span>
+              <select
+                value={timeRange}
+                onChange={(e) =>
+                  setTimeRange(Number(e.target.value) as TimeRange)
+                }
+                className="rounded-full border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700 shadow-sm outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              >
+                <option value={7}>Last 7 days</option>
+                <option value={14}>Last 14 days</option>
+                <option value={30}>Last 30 days</option>
+              </select>
+            </div>
+          </div>
+          {dailySeries.length === 0 ? (
+            <div className="py-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
+              {loading ? "Loading roles…" : "No roles in this range."}
+            </div>
+          ) : (
+            <div className="mt-2 flex flex-col gap-2">
+              <div className="h-40 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={dailySeries} margin={{ left: -24, right: 8 }}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="#e4e4e7"
+                      vertical={false}
+                    />
+                    <XAxis
+                      dataKey="dateLabel"
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fontSize: 10, fill: "#71717a" }}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fontSize: 10, fill: "#71717a" }}
+                    />
+                    <Tooltip
+                      cursor={{ stroke: "#e4e4e7", strokeWidth: 1 }}
+                      contentStyle={{
+                        borderRadius: 6,
+                        borderColor: "#e4e4e7",
+                        padding: "4px 8px",
+                        fontSize: 12,
+                      }}
+                      labelStyle={{ fontWeight: 500, marginBottom: 2 }}
+                      formatter={(value) => [`${value} roles`, "Count"]}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="count"
+                      stroke="#a1a1aa"
+                      strokeWidth={2}
+                      dot={{ r: 3, fill: "#ffffff", stroke: "#a1a1aa" }}
+                      activeDot={{ r: 4 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                Max {maxDailyCount} roles/day in this range (after filters).
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Jobs table */}
