@@ -1,0 +1,81 @@
+[
+  {
+    "id": "1",
+    "title": "Software Engineer",
+    "company": "Acme Corp",
+    "location": "San Francisco, CA",
+    "roleType": "swe",
+    "seniority": "mid",
+    "salaryMin": 140000,
+    "salaryMax": 180000,
+    "postedAt": "2026-03-10T00:00:00.000Z",
+    "technologies": ["TypeScript", "React", "Node.js"],
+    "workMode": "hybrid"
+  },
+  {
+    "id": "2",
+    "title": "Senior Data Scientist",
+    "company": "DataWave",
+    "location": "New York, NY",
+    "roleType": "data",
+    "seniority": "senior",
+    "salaryMin": 170000,
+    "salaryMax": 210000,
+    "postedAt": "2026-03-12T00:00:00.000Z",
+    "technologies": ["Python", "SQL", "TensorFlow"],
+    "workMode": "onsite"
+  },
+  {
+    "id": "3",
+    "title": "Junior Data Analyst",
+    "company": "InsightOps",
+    "location": "Remote - US",
+    "roleType": "data",
+    "seniority": "junior",
+    "salaryMin": 80000,
+    "salaryMax": 100000,
+    "postedAt": "2026-03-14T00:00:00.000Z",
+    "technologies": ["SQL", "Excel", "Tableau"],
+    "workMode": "remote"
+  },
+  {
+    "id": "4",
+    "title": "Full-Stack Engineer",
+    "company": "CloudBridge",
+    "location": "Seattle, WA",
+    "roleType": "swe",
+    "seniority": "mid",
+    "salaryMin": 135000,
+    "salaryMax": 165000,
+    "postedAt": "2026-03-09T00:00:00.000Z",
+    "technologies": ["TypeScript", "React", "AWS"],
+    "workMode": "onsite"
+  },
+  {
+    "id": "5",
+    "title": "Machine Learning Engineer",
+    "company": "Visionary AI",
+    "location": "Remote - US",
+    "roleType": "data",
+    "seniority": "mid",
+    "salaryMin": 150000,
+    "salaryMax": 190000,
+    "postedAt": "2026-03-11T00:00:00.000Z",
+    "technologies": ["Python", "PyTorch", "ML Ops"],
+    "workMode": "remote"
+  },
+  {
+    "id": "6",
+    "title": "Backend Engineer",
+    "company": "FinStack",
+    "location": "Chicago, IL",
+    "roleType": "swe",
+    "seniority": "senior",
+    "salaryMin": 155000,
+    "salaryMax": 195000,
+    "postedAt": "2026-03-08T00:00:00.000Z",
+    "technologies": ["Java", "Spring", "PostgreSQL"],
+    "workMode": "hybrid"
+  }
+]
+
