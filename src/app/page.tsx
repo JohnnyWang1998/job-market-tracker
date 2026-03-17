@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   CartesianGrid,
   Line,
@@ -11,47 +11,32 @@ import {
   YAxis,
 } from "recharts";
 import type { Job, RoleType, WorkMode } from "@/lib/jobs";
-
-interface JobsResponse {
-  jobs: Job[];
-  fetchedAt: string;
-}
+import sampleJobs from "../../data/jobs-sample.json";
 
 type TimeRange = 7 | 14 | 30;
 
 export default function Home() {
-  const [data, setData] = useState<JobsResponse | null>(null);
+  const [data, setData] = useState(() => ({
+    jobs: sampleJobs as Job[],
+    fetchedAt: new Date().toISOString(),
+  }));
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [roleFilter, setRoleFilter] = useState<RoleType | "all">("all");
   const [workModeFilter, setWorkModeFilter] = useState<WorkMode | "all">(
     "all",
   );
   const [timeRange, setTimeRange] = useState<TimeRange>(14);
 
-  const fetchJobs = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const res = await fetch("/api/jobs");
-      if (!res.ok) {
-        throw new Error(`Request failed with status ${res.status}`);
-      }
-      const json = (await res.json()) as JobsResponse;
-      setData(json);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
+  const refreshJobs = () => {
+    setLoading(true);
+    setData({
+      jobs: sampleJobs as Job[],
+      fetchedAt: new Date().toISOString(),
+    });
+    setLoading(false);
   };
 
-  useEffect(() => {
-    void fetchJobs();
-  }, []);
-
   const filteredJobs = useMemo(() => {
-    if (!data) return [];
     return data.jobs.filter((job) => {
       if (roleFilter !== "all" && job.roleType !== roleFilter) return false;
       if (workModeFilter !== "all" && job.workMode !== workModeFilter)
@@ -133,7 +118,7 @@ export default function Home() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => void fetchJobs()}
+              onClick={refreshJobs}
               disabled={loading}
               className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-50 shadow-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
             >
@@ -144,12 +129,6 @@ export default function Home() {
             </div>
           </div>
         </header>
-
-        {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
-            Failed to load jobs: {error}
-          </div>
-        )}
 
         {/* Filters */}
         <section className="flex flex-wrap items-center gap-4 rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
@@ -424,4 +403,3 @@ export default function Home() {
     </div>
   );
 }
-
