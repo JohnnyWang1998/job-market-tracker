@@ -2,7 +2,7 @@
 
 Small Next.js dashboard for exploring US software and data job listings with lightweight filtering and trend views.
 
-This is a study project for practicing Cursor best practices, the BMAD method, and Codex CLI workflows. I made it for fun.
+This is a study project for practicing Cursor best practices, the BMAD method, and Codex CLI workflows. I made it for fun. Available at [https://job-market-tracker.vercel.app/](https://job-market-tracker.vercel.app/).
 
 ## What It Does
 
