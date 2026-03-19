@@ -6,15 +6,30 @@ This is a study project for practicing Cursor best practices, the BMAD method, a
 
 ## What It Does
 
-- Fetches job data from a local API route at `/api/jobs`
+- Fetches normalized job data from server-side API routes
 - Displays top-level counts for total, SWE, and data roles
 - Filters listings by role type and work mode
 - Shows work mode distribution and posting volume over time
-- Renders a table of individual roles with salary, posting date, and tech stack
+- Renders a table of individual roles with salary, posting date, tech stack, and source links
+- Supports scheduled ingestion from live ATS feeds
 
 ## Current State
 
-This app currently runs on sample data stored in [`data/jobs-sample.json`](./data/jobs-sample.json). The API layer in [`src/app/api/jobs/route.ts`](./src/app/api/jobs/route.ts) returns that dataset directly with a fresh `fetchedAt` timestamp.
+The app now supports live data ingestion from:
+
+- Greenhouse
+- Lever
+- Ashby
+
+Runtime behavior:
+
+- [`src/app/api/jobs/route.ts`](./src/app/api/jobs/route.ts) serves normalized jobs to the frontend
+- [`src/app/api/cron/ingest/route.ts`](./src/app/api/cron/ingest/route.ts) ingests live job data on a schedule
+- [`src/lib/company-sources.ts`](./src/lib/company-sources.ts) defines the default curated company list
+- [`src/lib/providers.ts`](./src/lib/providers.ts) contains provider-specific adapters
+- [`src/lib/db.ts`](./src/lib/db.ts) manages the Postgres schema and job storage
+
+If `DATABASE_URL` is not configured, the app falls back to the sample dataset in [`data/jobs-sample.json`](./data/jobs-sample.json).
 
 ## Tech Stack
 
@@ -23,17 +38,35 @@ This app currently runs on sample data stored in [`data/jobs-sample.json`](./dat
 - TypeScript
 - Tailwind CSS 4
 - Recharts
+- Postgres
+- Vercel Cron Jobs
 
 ## Run Locally
 
-Install dependencies and start the development server:
+Create an environment file from [`.env.example`](./.env.example), then install dependencies and start the development server:
 
 ```bash
 npm install
 npm run dev
 ```
 
+Environment variables:
+
+- `DATABASE_URL` for Postgres
+- `CRON_SECRET` for the ingestion endpoint
+
 Open `http://localhost:3000`.
+
+### Manual Ingest Trigger
+
+You can run ingestion manually (local or production) to force a refresh:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  http://localhost:3000/api/cron/ingest
+```
+
+The endpoint returns summary stats such as `sourcesProcessed`, `fetchedCount`, and `errors`.
 
 ## Available Scripts
 
@@ -47,12 +80,16 @@ Open `http://localhost:3000`.
 ```text
 src/
   app/
+    api/cron/ingest/route.ts   Scheduled ingestion endpoint
     api/jobs/route.ts   API endpoint for job data
     page.tsx            Dashboard UI
     layout.tsx          App shell and metadata
     globals.css         Global styles
   lib/
     jobs.ts             Shared job types
+    db.ts               Postgres schema and queries
+    providers.ts        ATS provider adapters
+    ingest.ts           Ingestion workflow
 data/
   jobs-sample.json      Local sample dataset
 ```
@@ -60,12 +97,13 @@ data/
 ## Notes
 
 - The dashboard is client-rendered and fetches from the local API on load.
-- Refreshing data currently re-reads the same sample dataset rather than pulling from an external source.
-- App metadata in [`src/app/layout.tsx`](./src/app/layout.tsx) is still generic and should be updated if this project is published.
+- The intended production target is Vercel, not GitHub Pages, because live ingestion requires server routes and cron execution.
+- The default live sources are a curated set of public boards: Stripe, Vercel, Plaid, and OpenAI.
+- Jobs are normalized into a shared schema and filtered down to SWE and data roles.
 
 ## Next Improvements
 
-- Replace the sample dataset with a real ingestion pipeline
-- Add source links and job detail views
+- Add a richer company/source configuration UI instead of code-based source lists
+- Track observation history separately from source `postedAt` for stronger time-series analysis
 - Support more filters such as seniority, location, and salary range
-- Persist snapshots so trend charts reflect historical crawls instead of sample timestamps
+- Add tests around provider adapters and ingestion behavior

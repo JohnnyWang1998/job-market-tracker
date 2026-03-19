@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CartesianGrid,
   Line,
@@ -10,34 +10,52 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { Job, RoleType, WorkMode } from "@/lib/jobs";
-import sampleJobs from "../../data/jobs-sample.json";
+import type { Job, JobsResponse, JobSource, RoleType, WorkMode } from "@/lib/jobs";
 
 type TimeRange = 7 | 14 | 30;
 
+const sourceLabels: Record<JobSource, string> = {
+  greenhouse: "Greenhouse",
+  lever: "Lever",
+  ashby: "Ashby",
+};
+
 export default function Home() {
-  const [data, setData] = useState(() => ({
-    jobs: sampleJobs as Job[],
-    fetchedAt: new Date().toISOString(),
-  }));
+  const [data, setData] = useState<JobsResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [roleFilter, setRoleFilter] = useState<RoleType | "all">("all");
   const [workModeFilter, setWorkModeFilter] = useState<WorkMode | "all">(
     "all",
   );
   const [timeRange, setTimeRange] = useState<TimeRange>(14);
 
-  const refreshJobs = () => {
-    setLoading(true);
-    setData({
-      jobs: sampleJobs as Job[],
-      fetchedAt: new Date().toISOString(),
-    });
-    setLoading(false);
+  const refreshJobs = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await fetch("/api/jobs", { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+
+      const json = (await response.json()) as JobsResponse;
+      setData(json);
+    } catch (fetchError) {
+      setError(
+        fetchError instanceof Error ? fetchError.message : "Unknown error",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
+  useEffect(() => {
+    void refreshJobs();
+  }, []);
+
   const filteredJobs = useMemo(() => {
-    return data.jobs.filter((job) => {
+    return (data?.jobs ?? []).filter((job) => {
       if (roleFilter !== "all" && job.roleType !== roleFilter) return false;
       if (workModeFilter !== "all" && job.workMode !== workModeFilter)
         return false;
@@ -46,51 +64,61 @@ export default function Home() {
   }, [data, roleFilter, workModeFilter]);
 
   const totalJobs = filteredJobs.length;
-  const sweJobs = filteredJobs.filter((j) => j.roleType === "swe").length;
-  const dataJobs = filteredJobs.filter((j) => j.roleType === "data").length;
+  const sweJobs = filteredJobs.filter((job) => job.roleType === "swe").length;
+  const dataJobs = filteredJobs.filter((job) => job.roleType === "data").length;
 
   const workModeCounts: Record<WorkMode, number> = useMemo(() => {
-    const base: Record<WorkMode, number> = {
+    const counts: Record<WorkMode, number> = {
       remote: 0,
       hybrid: 0,
       onsite: 0,
     };
+
     for (const job of filteredJobs) {
-      base[job.workMode] += 1;
+      counts[job.workMode] += 1;
     }
-    return base;
+
+    return counts;
   }, [filteredJobs]);
 
+  const providerSummary = useMemo(() => {
+    const providers = data?.providers ?? [];
+    return providers.map((provider) => sourceLabels[provider]).join(", ");
+  }, [data?.providers]);
+
   const lastUpdated = data?.fetchedAt
-    ? new Date(data.fetchedAt).toLocaleTimeString()
+    ? new Date(data.fetchedAt).toLocaleString()
     : null;
 
   const dailySeries = useMemo(() => {
-    if (!filteredJobs.length) return [];
+    if (!filteredJobs.length) {
+      return [];
+    }
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const days: { dateLabel: string; key: string; count: number }[] = [];
 
+    const days: { dateLabel: string; key: string; count: number }[] = [];
     for (let i = timeRange - 1; i >= 0; i -= 1) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
-      const dateLabel = d.toLocaleDateString(undefined, {
-        month: "short",
-        day: "numeric",
+      const day = new Date(today);
+      day.setDate(today.getDate() - i);
+      days.push({
+        dateLabel: day.toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+        }),
+        key: day.toISOString().slice(0, 10),
+        count: 0,
       });
-      days.push({ dateLabel, key, count: 0 });
     }
 
-    const indexByKey = new Map(days.map((d, idx) => [d.key, idx]));
+    const indexByKey = new Map(days.map((day, index) => [day.key, index]));
     for (const job of filteredJobs) {
-      const d = new Date(job.postedAt);
-      d.setHours(0, 0, 0, 0);
-      const key = d.toISOString().slice(0, 10);
-      const idx = indexByKey.get(key);
-      if (idx !== undefined) {
-        days[idx].count += 1;
+      const day = new Date(job.postedAt);
+      day.setHours(0, 0, 0, 0);
+      const index = indexByKey.get(day.toISOString().slice(0, 10));
+      if (index !== undefined) {
+        days[index].count += 1;
       }
     }
 
@@ -99,38 +127,48 @@ export default function Home() {
 
   const maxDailyCount =
     dailySeries.length > 0
-      ? Math.max(...dailySeries.map((d) => d.count), 1)
+      ? Math.max(...dailySeries.map((day) => day.count), 1)
       : 1;
 
   return (
     <div className="min-h-screen bg-zinc-50 px-4 py-8 font-sans text-zinc-900 dark:bg-black dark:text-zinc-50">
-      <main className="mx-auto flex max-w-5xl flex-col gap-8">
+      <main className="mx-auto flex max-w-6xl flex-col gap-8">
         <header className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">
               US Software &amp; Data Job Market
             </h1>
             <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-              Local v0 – sample data, simple filters, and a real-time refresh
-              button.
+              Live ATS feeds from Greenhouse, Lever, and Ashby, normalized for
+              SWE and data roles.
+            </p>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              {data?.mode === "sample"
+                ? "Database not configured, showing sample data."
+                : `Active sources: ${providerSummary || "Loading sources…"}`}
             </p>
           </div>
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={refreshJobs}
+              onClick={() => void refreshJobs()}
               disabled={loading}
               className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-50 shadow-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
             >
               {loading ? "Refreshing…" : "Refresh data"}
             </button>
             <div className="text-xs text-zinc-500 dark:text-zinc-400">
-              {lastUpdated ? `Last updated: ${lastUpdated}` : "Loading…"}
+              {lastUpdated ? `Last ingested: ${lastUpdated}` : "Loading…"}
             </div>
           </div>
         </header>
 
-        {/* Filters */}
+        {error ? (
+          <section className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+            Failed to load jobs: {error}
+          </section>
+        ) : null}
+
         <section className="flex flex-wrap items-center gap-4 rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
           <div className="flex flex-col gap-1 text-sm">
             <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
@@ -190,31 +228,12 @@ export default function Home() {
           </div>
         </section>
 
-        {/* KPI cards */}
         <section className="grid gap-4 sm:grid-cols-3">
-          <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
-            <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-              Total roles
-            </div>
-            <div className="mt-2 text-2xl font-semibold">
-              {loading && !data ? "…" : totalJobs}
-            </div>
-          </div>
-          <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
-            <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-              SWE roles
-            </div>
-            <div className="mt-2 text-2xl font-semibold">{sweJobs}</div>
-          </div>
-          <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
-            <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-              Data roles
-            </div>
-            <div className="mt-2 text-2xl font-semibold">{dataJobs}</div>
-          </div>
+          <KpiCard label="Total roles" value={loading && !data ? "…" : totalJobs} />
+          <KpiCard label="SWE roles" value={sweJobs} />
+          <KpiCard label="Data roles" value={dataJobs} />
         </section>
 
-        {/* Simple bar chart for work mode */}
         <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold">Roles by work mode</h2>
@@ -230,6 +249,7 @@ export default function Home() {
                   : mode === "hybrid"
                     ? "Hybrid"
                     : "On-site";
+
               return (
                 <div
                   key={mode}
@@ -237,7 +257,7 @@ export default function Home() {
                 >
                   <div className="flex h-32 w-full items-end justify-center rounded-full bg-zinc-100 p-1 dark:bg-zinc-900">
                     <div
-                      className="w-full rounded-full bg-gradient-to-t from-zinc-900 to-zinc-600 text-xs text-zinc-50 dark:from-zinc-100 dark:to-zinc-300"
+                      className="w-full rounded-full bg-gradient-to-t from-zinc-900 to-zinc-600 dark:from-zinc-100 dark:to-zinc-300"
                       style={{ height: `${height || 4}%` }}
                     />
                   </div>
@@ -253,7 +273,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Line chart: roles over time */}
         <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
           <div className="mb-3 flex items-center justify-between gap-2">
             <h2 className="text-sm font-semibold">Roles over time</h2>
@@ -261,8 +280,8 @@ export default function Home() {
               <span>Range</span>
               <select
                 value={timeRange}
-                onChange={(e) =>
-                  setTimeRange(Number(e.target.value) as TimeRange)
+                onChange={(event) =>
+                  setTimeRange(Number(event.target.value) as TimeRange)
                 }
                 className="rounded-full border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700 shadow-sm outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
               >
@@ -278,7 +297,7 @@ export default function Home() {
             </div>
           ) : (
             <div className="mt-2 flex flex-col gap-2">
-              <div className="h-40 w-full">
+              <div className="h-40 w-full min-w-0">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={dailySeries} margin={{ left: -24, right: 8 }}>
                     <CartesianGrid
@@ -321,16 +340,15 @@ export default function Home() {
                 </ResponsiveContainer>
               </div>
               <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                Max {maxDailyCount} roles/day in this range (after filters).
+                Max {maxDailyCount} roles/day in this range.
               </div>
             </div>
           )}
         </section>
 
-        {/* Jobs table */}
         <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Roles (sample data)</h2>
+            <h2 className="text-sm font-semibold">Live roles</h2>
             <span className="text-xs text-zinc-500 dark:text-zinc-400">
               Showing {filteredJobs.length} of {data?.jobs.length ?? 0} roles
             </span>
@@ -341,6 +359,7 @@ export default function Home() {
                 <tr>
                   <th className="py-2 pr-4">Title</th>
                   <th className="py-2 pr-4">Company</th>
+                  <th className="py-2 pr-4">Source</th>
                   <th className="py-2 pr-4">Location</th>
                   <th className="py-2 pr-4">Role</th>
                   <th className="py-2 pr-4">Mode</th>
@@ -351,42 +370,12 @@ export default function Home() {
               </thead>
               <tbody>
                 {filteredJobs.map((job) => (
-                  <tr
-                    key={job.id}
-                    className="border-b border-zinc-100 align-top last:border-0 dark:border-zinc-900"
-                  >
-                    <td className="py-2 pr-4 font-medium">{job.title}</td>
-                    <td className="py-2 pr-4 text-zinc-700 dark:text-zinc-300">
-                      {job.company}
-                    </td>
-                    <td className="py-2 pr-4 text-zinc-700 dark:text-zinc-300">
-                      {job.location}
-                    </td>
-                    <td className="py-2 pr-4 text-xs uppercase text-zinc-600 dark:text-zinc-400">
-                      {job.roleType === "swe" ? "SWE" : "Data"}
-                    </td>
-                    <td className="py-2 pr-4 text-xs capitalize text-zinc-600 dark:text-zinc-400">
-                      {job.workMode}
-                    </td>
-                    <td className="py-2 pr-4 text-zinc-700 dark:text-zinc-300">
-                      {job.salaryMin && job.salaryMax
-                        ? `$${(job.salaryMin / 1000).toFixed(0)}k–$${(
-                            job.salaryMax / 1000
-                          ).toFixed(0)}k`
-                        : "n/a"}
-                    </td>
-                    <td className="py-2 pr-4 text-xs text-zinc-600 dark:text-zinc-400">
-                      {new Date(job.postedAt).toLocaleDateString()}
-                    </td>
-                    <td className="py-2 pr-4 text-xs text-zinc-700 dark:text-zinc-300">
-                      {job.technologies.join(", ")}
-                    </td>
-                  </tr>
+                  <JobRow key={job.id} job={job} />
                 ))}
-                {filteredJobs.length === 0 && (
+                {filteredJobs.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       className="py-6 text-center text-sm text-zinc-500 dark:text-zinc-400"
                     >
                       {loading
@@ -394,12 +383,89 @@ export default function Home() {
                         : "No roles match the current filters."}
                     </td>
                   </tr>
-                )}
+                ) : null}
               </tbody>
             </table>
           </div>
         </section>
       </main>
     </div>
+  );
+}
+
+function KpiCard({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
+      <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+        {label}
+      </div>
+      <div className="mt-2 text-2xl font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function JobRow({ job }: { job: Job }) {
+  const salaryLabel =
+    job.salaryMin && job.salaryMax
+      ? `$${(job.salaryMin / 1000).toFixed(0)}k-$${(
+          job.salaryMax / 1000
+        ).toFixed(0)}k`
+      : "n/a";
+
+  return (
+    <tr className="border-b border-zinc-100 align-top last:border-0 dark:border-zinc-900">
+      <td className="py-3 pr-4 font-medium">
+        <a
+          href={job.sourceUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="hover:underline"
+        >
+          {job.title}
+        </a>
+        <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          <a
+            href={job.applyUrl ?? job.sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="hover:underline"
+          >
+            Apply
+          </a>
+        </div>
+      </td>
+      <td className="py-3 pr-4 text-zinc-700 dark:text-zinc-300">
+        {job.company}
+      </td>
+      <td className="py-3 pr-4">
+        <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+          {sourceLabels[job.source]}
+        </span>
+      </td>
+      <td className="py-3 pr-4 text-zinc-700 dark:text-zinc-300">
+        {job.location}
+      </td>
+      <td className="py-3 pr-4 text-xs uppercase text-zinc-600 dark:text-zinc-400">
+        {job.roleType === "swe" ? "SWE" : "Data"}
+      </td>
+      <td className="py-3 pr-4 text-xs capitalize text-zinc-600 dark:text-zinc-400">
+        {job.workMode}
+      </td>
+      <td className="py-3 pr-4 text-zinc-700 dark:text-zinc-300">
+        {salaryLabel}
+      </td>
+      <td className="py-3 pr-4 text-xs text-zinc-600 dark:text-zinc-400">
+        {new Date(job.postedAt).toLocaleDateString()}
+      </td>
+      <td className="py-3 pr-4 text-xs text-zinc-700 dark:text-zinc-300">
+        {job.technologies.length > 0 ? job.technologies.join(", ") : "n/a"}
+      </td>
+    </tr>
   );
 }
