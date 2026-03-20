@@ -2,7 +2,7 @@
 
 Small Next.js dashboard for exploring US software and data job listings with lightweight filtering and trend views.
 
-This is a study project for practicing Cursor best practices, the BMAD method, and Codex CLI workflows. I made it for fun. Available at [https://job-market-tracker.vercel.app/](https://job-market-tracker.vercel.app/).
+This is a study project for practicing Cursor best practices, the BMAD method, and Codex CLI workflows. I made it for fun. Available at [https://job-market-tracker-live.vercel.app/](https://job-market-tracker-live.vercel.app/).
 
 ## What It Does
 
@@ -67,6 +67,17 @@ curl -H "Authorization: Bearer $CRON_SECRET" \
 ```
 
 The endpoint returns summary stats such as `sourcesProcessed`, `fetchedCount`, and `errors`.
+
+### Production Ingest Trigger
+
+In production, call the live endpoint with the same bearer token:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  https://job-market-tracker-live.vercel.app/api/cron/ingest
+```
+
+Current Vercel cron schedule is daily at `0 0 * * *` (UTC).
 
 ## Available Scripts
 
