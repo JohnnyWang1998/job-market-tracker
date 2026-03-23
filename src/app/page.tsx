@@ -29,6 +29,8 @@ export default function Home() {
     "all",
   );
   const [timeRange, setTimeRange] = useState<TimeRange>(14);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 25;
 
   const refreshJobs = async () => {
     try {
@@ -62,6 +64,23 @@ export default function Home() {
       return true;
     });
   }, [data, roleFilter, workModeFilter]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [roleFilter, workModeFilter, data?.fetchedAt]);
+
+  const totalPages = Math.max(Math.ceil(filteredJobs.length / pageSize), 1);
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+
+  const pagedJobs = useMemo(() => {
+    const start = (safeCurrentPage - 1) * pageSize;
+    return filteredJobs.slice(start, start + pageSize);
+  }, [filteredJobs, safeCurrentPage]);
+
+  const startItem = filteredJobs.length
+    ? (safeCurrentPage - 1) * pageSize + 1
+    : 0;
+  const endItem = Math.min(safeCurrentPage * pageSize, filteredJobs.length);
 
   const totalJobs = filteredJobs.length;
   const sweJobs = filteredJobs.filter((job) => job.roleType === "swe").length;
@@ -350,7 +369,8 @@ export default function Home() {
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold">Live roles</h2>
             <span className="text-xs text-zinc-500 dark:text-zinc-400">
-              Showing {filteredJobs.length} of {data?.jobs.length ?? 0} roles
+              Showing {startItem}-{endItem} of {filteredJobs.length} filtered
+              roles ({data?.jobs.length ?? 0} total)
             </span>
           </div>
           <div className="overflow-x-auto">
@@ -369,7 +389,7 @@ export default function Home() {
                 </tr>
               </thead>
               <tbody>
-                {filteredJobs.map((job) => (
+                {pagedJobs.map((job) => (
                   <JobRow key={job.id} job={job} />
                 ))}
                 {filteredJobs.length === 0 ? (
@@ -387,6 +407,33 @@ export default function Home() {
               </tbody>
             </table>
           </div>
+          {filteredJobs.length > 0 ? (
+            <div className="mt-4 flex items-center justify-between gap-3 text-xs text-zinc-500 dark:text-zinc-400">
+              <span>
+                Page {safeCurrentPage} of {totalPages}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                  disabled={safeCurrentPage === 1}
+                  className="rounded-full border border-zinc-200 px-3 py-1 font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+                  }
+                  disabled={safeCurrentPage === totalPages}
+                  className="rounded-full border border-zinc-200 px-3 py-1 font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          ) : null}
         </section>
       </main>
     </div>
