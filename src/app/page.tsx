@@ -257,11 +257,10 @@ export default function Home() {
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold">Roles by work mode</h2>
           </div>
-          <div className="mt-2 flex gap-4">
+          <div className="mt-3 space-y-3">
             {(["remote", "hybrid", "onsite"] as WorkMode[]).map((mode) => {
               const count = workModeCounts[mode];
-              const max = Math.max(...Object.values(workModeCounts), 1);
-              const height = (count / max) * 100;
+              const percent = totalJobs > 0 ? (count / totalJobs) * 100 : 0;
               const label =
                 mode === "remote"
                   ? "Remote"
@@ -270,21 +269,20 @@ export default function Home() {
                     : "On-site";
 
               return (
-                <div
-                  key={mode}
-                  className="flex flex-1 flex-col items-center justify-end gap-2"
-                >
-                  <div className="flex h-32 w-full items-end justify-center rounded-full bg-zinc-100 p-1 dark:bg-zinc-900">
+                <div key={mode} className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                      {label}
+                    </span>
+                    <span className="text-zinc-500 dark:text-zinc-400">
+                      {count} roles ({percent.toFixed(0)}%)
+                    </span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-md bg-zinc-100 dark:bg-zinc-900">
                     <div
-                      className="w-full rounded-full bg-gradient-to-t from-zinc-900 to-zinc-600 dark:from-zinc-100 dark:to-zinc-300"
-                      style={{ height: `${height || 4}%` }}
+                      className="h-full rounded-md bg-gradient-to-r from-zinc-900 to-zinc-600 dark:from-zinc-100 dark:to-zinc-300"
+                      style={{ width: `${Math.max(percent, count > 0 ? 2 : 0)}%` }}
                     />
-                  </div>
-                  <div className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
-                    {label}
-                  </div>
-                  <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                    {count} roles
                   </div>
                 </div>
               );
