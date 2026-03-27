@@ -1,7 +1,6 @@
 import { getCompanySources } from "@/lib/company-sources";
 import {
   createIngestRun,
-  dispatchAlertsForNewJobs,
   ensureSchema,
   finalizeIngestRun,
   hasDatabase,
@@ -20,8 +19,6 @@ export interface IngestSummary {
 }
 
 export async function ingestAllSources(): Promise<IngestSummary> {
-  const runStartedAt = new Date().toISOString();
-
   if (!hasDatabase()) {
     return {
       sourcesProcessed: 0,
@@ -95,14 +92,6 @@ export async function ingestAllSources(): Promise<IngestSummary> {
         });
       }
     }
-  }
-
-  const alertSummary = await dispatchAlertsForNewJobs(runStartedAt);
-  if (alertSummary.failed > 0) {
-    summary.errors.push({
-      source: "alerts",
-      message: `Failed to deliver ${alertSummary.failed} alert notification batch(es).`,
-    });
   }
 
   return summary;

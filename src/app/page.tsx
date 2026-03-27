@@ -12,11 +12,9 @@ import {
 } from "recharts";
 import type {
   Job,
-  JobFilterSnapshot,
   JobsResponse,
   JobSource,
   RoleType,
-  SavedAlert,
   Seniority,
   WorkMode,
 } from "@/lib/jobs";
@@ -31,12 +29,8 @@ const sourceLabels: Record<JobSource, string> = {
 
 export default function Home() {
   const [data, setData] = useState<JobsResponse | null>(null);
-  const [alerts, setAlerts] = useState<SavedAlert[]>([]);
   const [loading, setLoading] = useState(false);
-  const [alertsLoading, setAlertsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [alertsError, setAlertsError] = useState<string | null>(null);
-  const [alertSuccess, setAlertSuccess] = useState<string | null>(null);
   const [roleFilter, setRoleFilter] = useState<RoleType | "all">("all");
   const [workModeFilter, setWorkModeFilter] = useState<WorkMode | "all">(
     "all",
@@ -47,9 +41,6 @@ export default function Home() {
   const [locationQuery, setLocationQuery] = useState("");
   const [techQuery, setTechQuery] = useState("");
   const [salaryMinFilter, setSalaryMinFilter] = useState("");
-  const [alertName, setAlertName] = useState("");
-  const [alertWebhookUrl, setAlertWebhookUrl] = useState("");
-  const [alertSaving, setAlertSaving] = useState(false);
   const [timeRange, setTimeRange] = useState<TimeRange>(14);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 25;
@@ -74,107 +65,8 @@ export default function Home() {
     }
   };
 
-  const refreshAlerts = async () => {
-    try {
-      setAlertsLoading(true);
-      setAlertsError(null);
-      const response = await fetch("/api/alerts", { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`);
-      }
-
-      const json = (await response.json()) as { alerts?: SavedAlert[] };
-      setAlerts(json.alerts ?? []);
-    } catch (fetchError) {
-      setAlertsError(
-        fetchError instanceof Error ? fetchError.message : "Unknown error",
-      );
-    } finally {
-      setAlertsLoading(false);
-    }
-  };
-
-  const currentAlertFilters = useMemo((): JobFilterSnapshot => {
-    const salaryMin = Number(salaryMinFilter);
-    return {
-      roleType: roleFilter === "all" ? undefined : roleFilter,
-      workMode: workModeFilter === "all" ? undefined : workModeFilter,
-      seniority: seniorityFilter === "all" ? undefined : seniorityFilter,
-      locationQuery: locationQuery.trim() || undefined,
-      techQuery: techQuery.trim() || undefined,
-      salaryMin:
-        Number.isFinite(salaryMin) && salaryMin > 0 ? Math.floor(salaryMin) : undefined,
-    };
-  }, [
-    locationQuery,
-    roleFilter,
-    salaryMinFilter,
-    seniorityFilter,
-    techQuery,
-    workModeFilter,
-  ]);
-
-  const saveAlert = async () => {
-    if (!alertName.trim() || !alertWebhookUrl.trim()) {
-      setAlertsError("Alert name and webhook URL are required.");
-      return;
-    }
-
-    try {
-      setAlertSaving(true);
-      setAlertsError(null);
-      setAlertSuccess(null);
-      const response = await fetch("/api/alerts", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          name: alertName,
-          webhookUrl: alertWebhookUrl,
-          filters: currentAlertFilters,
-        }),
-      });
-
-      const json = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(json.error ?? `Request failed with status ${response.status}`);
-      }
-
-      setAlertSuccess("Alert saved.");
-      setAlertName("");
-      await refreshAlerts();
-    } catch (saveError) {
-      setAlertsError(saveError instanceof Error ? saveError.message : "Unknown error");
-    } finally {
-      setAlertSaving(false);
-    }
-  };
-
-  const deleteAlert = async (alertId: number) => {
-    try {
-      setAlertsError(null);
-      setAlertSuccess(null);
-      const response = await fetch(`/api/alerts/${alertId}`, {
-        method: "DELETE",
-      });
-      const json = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(json.error ?? `Request failed with status ${response.status}`);
-      }
-
-      setAlertSuccess("Alert deleted.");
-      await refreshAlerts();
-    } catch (deleteError) {
-      setAlertsError(
-        deleteError instanceof Error ? deleteError.message : "Unknown error",
-      );
-    }
-  };
-
   useEffect(() => {
     void refreshJobs();
-    void refreshAlerts();
   }, []);
 
   const filteredJobs = useMemo(() => {
@@ -471,79 +363,6 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Saved alerts</h2>
-            <span className="text-xs text-zinc-500 dark:text-zinc-400">
-              {alertsLoading ? "Refreshing alerts…" : `${alerts.length} active`}
-            </span>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-[1.2fr_1.8fr_auto]">
-            <input
-              value={alertName}
-              onChange={(event) => setAlertName(event.target.value)}
-              placeholder="Alert name"
-              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-            />
-            <input
-              value={alertWebhookUrl}
-              onChange={(event) => setAlertWebhookUrl(event.target.value)}
-              placeholder="https://hooks.slack.com/services/..."
-              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-            />
-            <button
-              type="button"
-              onClick={() => void saveAlert()}
-              disabled={alertSaving}
-              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-50 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-            >
-              {alertSaving ? "Saving..." : "Save alert"}
-            </button>
-          </div>
-
-          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-            Alerts use your current filters and fire on newly discovered jobs after each ingest.
-          </p>
-
-          {alertsError ? (
-            <p className="mt-2 text-xs text-red-600 dark:text-red-300">{alertsError}</p>
-          ) : null}
-          {alertSuccess ? (
-            <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-300">
-              {alertSuccess}
-            </p>
-          ) : null}
-
-          <div className="mt-4 space-y-2">
-            {alerts.map((alert) => (
-              <div
-                key={alert.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 p-3 text-xs dark:border-zinc-800"
-              >
-                <div className="space-y-1 text-zinc-600 dark:text-zinc-300">
-                  <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                    {alert.name}
-                  </div>
-                  <div>Filters: {formatFilters(alert.filters)}</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void deleteAlert(alert.id)}
-                  className="rounded-full border border-zinc-200 px-3 py-1 font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
-                >
-                  Delete
-                </button>
-              </div>
-            ))}
-            {!alertsLoading && alerts.length === 0 ? (
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                No alerts yet.
-              </p>
-            ) : null}
-          </div>
-        </section>
-
         <section className="grid gap-4 sm:grid-cols-3">
           <KpiCard label="Total roles" value={loading && !data ? "…" : totalJobs} />
           <KpiCard label="SWE roles" value={sweJobs} />
@@ -750,17 +569,6 @@ function KpiCard({
       <div className="mt-2 text-2xl font-semibold">{value}</div>
     </div>
   );
-}
-
-function formatFilters(filters: JobFilterSnapshot) {
-  const parts: string[] = [];
-  if (filters.roleType) parts.push(`role=${filters.roleType}`);
-  if (filters.workMode) parts.push(`mode=${filters.workMode}`);
-  if (filters.seniority) parts.push(`seniority=${filters.seniority}`);
-  if (filters.locationQuery) parts.push(`location~${filters.locationQuery}`);
-  if (filters.techQuery) parts.push(`tech~${filters.techQuery}`);
-  if (filters.salaryMin) parts.push(`salary>=${filters.salaryMin}`);
-  return parts.length > 0 ? parts.join(", ") : "all jobs";
 }
 
 function JobRow({ job }: { job: Job }) {

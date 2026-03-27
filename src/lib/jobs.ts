@@ -33,21 +33,3 @@ export interface JobsResponse {
   mode?: "live" | "sample";
   providers?: JobSource[];
 }
-
-export interface JobFilterSnapshot {
-  roleType?: RoleType;
-  workMode?: WorkMode;
-  seniority?: Seniority;
-  locationQuery?: string;
-  techQuery?: string;
-  salaryMin?: number;
-}
-
-export interface SavedAlert {
-  id: number;
-  name: string;
-  webhookUrl: string;
-  filters: JobFilterSnapshot;
-  createdAt: string;
-  updatedAt: string;
-}

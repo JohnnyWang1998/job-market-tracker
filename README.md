@@ -12,7 +12,6 @@ This is a study project for practicing Cursor best practices, the BMAD method, a
 - Shows work mode distribution and posting volume over time
 - Renders a table of individual roles with salary, posting date, tech stack, and source links
 - Supports scheduled ingestion from live ATS feeds
-- Supports saved webhook alerts for newly discovered roles that match current filters
 
 ## Current State
 
@@ -26,11 +25,9 @@ Runtime behavior:
 
 - [`src/app/api/jobs/route.ts`](./src/app/api/jobs/route.ts) serves normalized jobs to the frontend
 - [`src/app/api/cron/ingest/route.ts`](./src/app/api/cron/ingest/route.ts) ingests live job data on a schedule
-- [`src/app/api/alerts/route.ts`](./src/app/api/alerts/route.ts) lists/creates saved alerts
-- [`src/app/api/alerts/[id]/route.ts`](./src/app/api/alerts/[id]/route.ts) deletes saved alerts
 - [`src/lib/company-sources.ts`](./src/lib/company-sources.ts) defines the default curated company list
 - [`src/lib/providers.ts`](./src/lib/providers.ts) contains provider-specific adapters
-- [`src/lib/db.ts`](./src/lib/db.ts) manages the Postgres schema, jobs, and alert delivery logs
+- [`src/lib/db.ts`](./src/lib/db.ts) manages the Postgres schema and job storage
 
 If `DATABASE_URL` is not configured, the app falls back to the sample dataset in [`data/jobs-sample.json`](./data/jobs-sample.json).
 
@@ -114,7 +111,6 @@ data/
 - The intended production target is Vercel, not GitHub Pages, because live ingestion requires server routes and cron execution.
 - The default live sources are a curated set of public boards: Stripe, Vercel, Plaid, and OpenAI.
 - Jobs are normalized into a shared schema and filtered down to SWE and data roles.
-- Alert webhooks are sent during each ingest run and include only jobs first seen in that run.
 
 ## Next Improvements
 
