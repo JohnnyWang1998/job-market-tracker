@@ -10,7 +10,16 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { Job, JobsResponse, JobSource, RoleType, WorkMode } from "@/lib/jobs";
+import type {
+  Job,
+  JobFilterSnapshot,
+  JobsResponse,
+  JobSource,
+  RoleType,
+  SavedAlert,
+  Seniority,
+  WorkMode,
+} from "@/lib/jobs";
 
 type TimeRange = 7 | 14 | 30;
 
@@ -22,12 +31,25 @@ const sourceLabels: Record<JobSource, string> = {
 
 export default function Home() {
   const [data, setData] = useState<JobsResponse | null>(null);
+  const [alerts, setAlerts] = useState<SavedAlert[]>([]);
   const [loading, setLoading] = useState(false);
+  const [alertsLoading, setAlertsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [alertsError, setAlertsError] = useState<string | null>(null);
+  const [alertSuccess, setAlertSuccess] = useState<string | null>(null);
   const [roleFilter, setRoleFilter] = useState<RoleType | "all">("all");
   const [workModeFilter, setWorkModeFilter] = useState<WorkMode | "all">(
     "all",
   );
+  const [seniorityFilter, setSeniorityFilter] = useState<Seniority | "all">(
+    "all",
+  );
+  const [locationQuery, setLocationQuery] = useState("");
+  const [techQuery, setTechQuery] = useState("");
+  const [salaryMinFilter, setSalaryMinFilter] = useState("");
+  const [alertName, setAlertName] = useState("");
+  const [alertWebhookUrl, setAlertWebhookUrl] = useState("");
+  const [alertSaving, setAlertSaving] = useState(false);
   const [timeRange, setTimeRange] = useState<TimeRange>(14);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 25;
@@ -52,8 +74,107 @@ export default function Home() {
     }
   };
 
+  const refreshAlerts = async () => {
+    try {
+      setAlertsLoading(true);
+      setAlertsError(null);
+      const response = await fetch("/api/alerts", { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+
+      const json = (await response.json()) as { alerts?: SavedAlert[] };
+      setAlerts(json.alerts ?? []);
+    } catch (fetchError) {
+      setAlertsError(
+        fetchError instanceof Error ? fetchError.message : "Unknown error",
+      );
+    } finally {
+      setAlertsLoading(false);
+    }
+  };
+
+  const currentAlertFilters = useMemo((): JobFilterSnapshot => {
+    const salaryMin = Number(salaryMinFilter);
+    return {
+      roleType: roleFilter === "all" ? undefined : roleFilter,
+      workMode: workModeFilter === "all" ? undefined : workModeFilter,
+      seniority: seniorityFilter === "all" ? undefined : seniorityFilter,
+      locationQuery: locationQuery.trim() || undefined,
+      techQuery: techQuery.trim() || undefined,
+      salaryMin:
+        Number.isFinite(salaryMin) && salaryMin > 0 ? Math.floor(salaryMin) : undefined,
+    };
+  }, [
+    locationQuery,
+    roleFilter,
+    salaryMinFilter,
+    seniorityFilter,
+    techQuery,
+    workModeFilter,
+  ]);
+
+  const saveAlert = async () => {
+    if (!alertName.trim() || !alertWebhookUrl.trim()) {
+      setAlertsError("Alert name and webhook URL are required.");
+      return;
+    }
+
+    try {
+      setAlertSaving(true);
+      setAlertsError(null);
+      setAlertSuccess(null);
+      const response = await fetch("/api/alerts", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          name: alertName,
+          webhookUrl: alertWebhookUrl,
+          filters: currentAlertFilters,
+        }),
+      });
+
+      const json = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(json.error ?? `Request failed with status ${response.status}`);
+      }
+
+      setAlertSuccess("Alert saved.");
+      setAlertName("");
+      await refreshAlerts();
+    } catch (saveError) {
+      setAlertsError(saveError instanceof Error ? saveError.message : "Unknown error");
+    } finally {
+      setAlertSaving(false);
+    }
+  };
+
+  const deleteAlert = async (alertId: number) => {
+    try {
+      setAlertsError(null);
+      setAlertSuccess(null);
+      const response = await fetch(`/api/alerts/${alertId}`, {
+        method: "DELETE",
+      });
+      const json = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(json.error ?? `Request failed with status ${response.status}`);
+      }
+
+      setAlertSuccess("Alert deleted.");
+      await refreshAlerts();
+    } catch (deleteError) {
+      setAlertsError(
+        deleteError instanceof Error ? deleteError.message : "Unknown error",
+      );
+    }
+  };
+
   useEffect(() => {
     void refreshJobs();
+    void refreshAlerts();
   }, []);
 
   const filteredJobs = useMemo(() => {
@@ -61,13 +182,53 @@ export default function Home() {
       if (roleFilter !== "all" && job.roleType !== roleFilter) return false;
       if (workModeFilter !== "all" && job.workMode !== workModeFilter)
         return false;
+      if (seniorityFilter !== "all" && job.seniority !== seniorityFilter)
+        return false;
+      if (
+        locationQuery.trim() &&
+        !job.location.toLowerCase().includes(locationQuery.trim().toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        techQuery.trim() &&
+        !job.technologies.some((technology) =>
+          technology.toLowerCase().includes(techQuery.trim().toLowerCase()),
+        )
+      ) {
+        return false;
+      }
+      const salaryMin = Number(salaryMinFilter);
+      if (
+        Number.isFinite(salaryMin) &&
+        salaryMin > 0 &&
+        (!job.salaryMin || job.salaryMin < salaryMin)
+      ) {
+        return false;
+      }
       return true;
     });
-  }, [data, roleFilter, workModeFilter]);
+  }, [
+    data,
+    locationQuery,
+    roleFilter,
+    salaryMinFilter,
+    seniorityFilter,
+    techQuery,
+    workModeFilter,
+  ]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [roleFilter, workModeFilter, data?.fetchedAt]);
+  }, [
+    roleFilter,
+    workModeFilter,
+    seniorityFilter,
+    locationQuery,
+    techQuery,
+    salaryMinFilter,
+    data?.fetchedAt,
+  ]);
 
   const totalPages = Math.max(Math.ceil(filteredJobs.length / pageSize), 1);
   const safeCurrentPage = Math.min(currentPage, totalPages);
@@ -188,62 +349,198 @@ export default function Home() {
           </section>
         ) : null}
 
-        <section className="flex flex-wrap items-center gap-4 rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
-          <div className="flex flex-col gap-1 text-sm">
-            <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-              Role type
-            </span>
-            <div className="inline-flex rounded-full bg-zinc-100 p-1 text-xs dark:bg-zinc-900">
-              {[
-                { label: "All", value: "all" },
-                { label: "SWE", value: "swe" },
-                { label: "Data", value: "data" },
-              ].map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() =>
-                    setRoleFilter(option.value as RoleType | "all")
-                  }
-                  className={`rounded-full px-3 py-1 font-medium transition ${
-                    roleFilter === option.value
-                      ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50"
-                      : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
+        <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                Role type
+              </span>
+              <div className="inline-flex rounded-full bg-zinc-100 p-1 text-xs dark:bg-zinc-900">
+                {[
+                  { label: "All", value: "all" },
+                  { label: "SWE", value: "swe" },
+                  { label: "Data", value: "data" },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() =>
+                      setRoleFilter(option.value as RoleType | "all")
+                    }
+                    className={`rounded-full px-3 py-1 font-medium transition ${
+                      roleFilter === option.value
+                        ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50"
+                        : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                Work mode
+              </span>
+              <div className="inline-flex rounded-full bg-zinc-100 p-1 text-xs dark:bg-zinc-900">
+                {[
+                  { label: "All", value: "all" },
+                  { label: "Remote", value: "remote" },
+                  { label: "Hybrid", value: "hybrid" },
+                  { label: "On-site", value: "onsite" },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() =>
+                      setWorkModeFilter(option.value as WorkMode | "all")
+                    }
+                    className={`rounded-full px-3 py-1 font-medium transition ${
+                      workModeFilter === option.value
+                        ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50"
+                        : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                Seniority
+              </span>
+              <div className="inline-flex rounded-full bg-zinc-100 p-1 text-xs dark:bg-zinc-900">
+                {[
+                  { label: "All", value: "all" },
+                  { label: "Junior", value: "junior" },
+                  { label: "Mid", value: "mid" },
+                  { label: "Senior", value: "senior" },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() =>
+                      setSeniorityFilter(option.value as Seniority | "all")
+                    }
+                    className={`rounded-full px-3 py-1 font-medium transition ${
+                      seniorityFilter === option.value
+                        ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50"
+                        : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
-          <div className="flex flex-col gap-1 text-sm">
-            <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-              Work mode
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <label className="flex flex-col gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+              Location contains
+              <input
+                value={locationQuery}
+                onChange={(event) => setLocationQuery(event.target.value)}
+                placeholder="e.g. New York"
+                className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+              Tech contains
+              <input
+                value={techQuery}
+                onChange={(event) => setTechQuery(event.target.value)}
+                placeholder="e.g. Python"
+                className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+              Salary min (USD)
+              <input
+                type="number"
+                min={0}
+                value={salaryMinFilter}
+                onChange={(event) => setSalaryMinFilter(event.target.value)}
+                placeholder="e.g. 180000"
+                className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              />
+            </label>
+          </div>
+        </section>
+
+        <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Saved alerts</h2>
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">
+              {alertsLoading ? "Refreshing alerts…" : `${alerts.length} active`}
             </span>
-            <div className="inline-flex rounded-full bg-zinc-100 p-1 text-xs dark:bg-zinc-900">
-              {[
-                { label: "All", value: "all" },
-                { label: "Remote", value: "remote" },
-                { label: "Hybrid", value: "hybrid" },
-                { label: "On-site", value: "onsite" },
-              ].map((option) => (
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-[1.2fr_1.8fr_auto]">
+            <input
+              value={alertName}
+              onChange={(event) => setAlertName(event.target.value)}
+              placeholder="Alert name"
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+            />
+            <input
+              value={alertWebhookUrl}
+              onChange={(event) => setAlertWebhookUrl(event.target.value)}
+              placeholder="https://hooks.slack.com/services/..."
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+            />
+            <button
+              type="button"
+              onClick={() => void saveAlert()}
+              disabled={alertSaving}
+              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-50 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            >
+              {alertSaving ? "Saving..." : "Save alert"}
+            </button>
+          </div>
+
+          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+            Alerts use your current filters and fire on newly discovered jobs after each ingest.
+          </p>
+
+          {alertsError ? (
+            <p className="mt-2 text-xs text-red-600 dark:text-red-300">{alertsError}</p>
+          ) : null}
+          {alertSuccess ? (
+            <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-300">
+              {alertSuccess}
+            </p>
+          ) : null}
+
+          <div className="mt-4 space-y-2">
+            {alerts.map((alert) => (
+              <div
+                key={alert.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 p-3 text-xs dark:border-zinc-800"
+              >
+                <div className="space-y-1 text-zinc-600 dark:text-zinc-300">
+                  <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                    {alert.name}
+                  </div>
+                  <div>Filters: {formatFilters(alert.filters)}</div>
+                </div>
                 <button
-                  key={option.value}
                   type="button"
-                  onClick={() =>
-                    setWorkModeFilter(option.value as WorkMode | "all")
-                  }
-                  className={`rounded-full px-3 py-1 font-medium transition ${
-                    workModeFilter === option.value
-                      ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50"
-                      : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
-                  }`}
+                  onClick={() => void deleteAlert(alert.id)}
+                  className="rounded-full border border-zinc-200 px-3 py-1 font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
                 >
-                  {option.label}
+                  Delete
                 </button>
-              ))}
-            </div>
+              </div>
+            ))}
+            {!alertsLoading && alerts.length === 0 ? (
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                No alerts yet.
+              </p>
+            ) : null}
           </div>
         </section>
 
@@ -453,6 +750,17 @@ function KpiCard({
       <div className="mt-2 text-2xl font-semibold">{value}</div>
     </div>
   );
+}
+
+function formatFilters(filters: JobFilterSnapshot) {
+  const parts: string[] = [];
+  if (filters.roleType) parts.push(`role=${filters.roleType}`);
+  if (filters.workMode) parts.push(`mode=${filters.workMode}`);
+  if (filters.seniority) parts.push(`seniority=${filters.seniority}`);
+  if (filters.locationQuery) parts.push(`location~${filters.locationQuery}`);
+  if (filters.techQuery) parts.push(`tech~${filters.techQuery}`);
+  if (filters.salaryMin) parts.push(`salary>=${filters.salaryMin}`);
+  return parts.length > 0 ? parts.join(", ") : "all jobs";
 }
 
 function JobRow({ job }: { job: Job }) {

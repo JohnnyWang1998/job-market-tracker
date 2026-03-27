@@ -1,7 +1,7 @@
 import postgres from "postgres";
 import sampleJobs from "../../data/jobs-sample.json";
 import type { CompanySourceConfig } from "@/lib/company-sources";
-import type { Job, JobsResponse } from "@/lib/jobs";
+import type { Job, JobFilterSnapshot, JobsResponse, SavedAlert } from "@/lib/jobs";
 import type { NormalizedJobRecord } from "@/lib/providers";
 
 let sqlClient: postgres.Sql | null = null;
@@ -25,6 +25,45 @@ function getSql() {
 
 export function hasDatabase() {
   return Boolean(process.env.DATABASE_URL);
+}
+
+function normalizeOptionalText(input?: string) {
+  if (!input) {
+    return undefined;
+  }
+
+  const trimmed = input.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function sanitizeAlertFilters(filters: JobFilterSnapshot): JobFilterSnapshot {
+  const output: JobFilterSnapshot = {};
+
+  if (filters.roleType) {
+    output.roleType = filters.roleType;
+  }
+  if (filters.workMode) {
+    output.workMode = filters.workMode;
+  }
+  if (filters.seniority) {
+    output.seniority = filters.seniority;
+  }
+
+  const locationQuery = normalizeOptionalText(filters.locationQuery);
+  if (locationQuery) {
+    output.locationQuery = locationQuery;
+  }
+
+  const techQuery = normalizeOptionalText(filters.techQuery);
+  if (techQuery) {
+    output.techQuery = techQuery;
+  }
+
+  if (typeof filters.salaryMin === "number" && Number.isFinite(filters.salaryMin)) {
+    output.salaryMin = Math.max(0, Math.floor(filters.salaryMin));
+  }
+
+  return output;
 }
 
 function getSampleJobs(): Job[] {
@@ -116,6 +155,34 @@ export async function ensureSchema() {
   `;
 
   await sql`
+    create table if not exists saved_alerts (
+      id bigserial primary key,
+      name text not null,
+      webhook_url text not null,
+      role_type text,
+      work_mode text,
+      seniority text,
+      location_query text,
+      tech_query text,
+      salary_min integer,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+  `;
+
+  await sql`
+    create table if not exists alert_notifications (
+      id bigserial primary key,
+      alert_id bigint not null references saved_alerts(id) on delete cascade,
+      job_id bigint not null references jobs(id) on delete cascade,
+      sent_at timestamptz not null default now(),
+      delivery_status text not null,
+      error_message text,
+      unique (alert_id, job_id)
+    );
+  `;
+
+  await sql`
     alter table jobs
     add column if not exists work_mode text
   `;
@@ -131,6 +198,349 @@ export async function ensureSchema() {
   `;
 
   schemaReady = true;
+}
+
+interface SavedAlertRow {
+  id: string;
+  name: string;
+  webhook_url: string;
+  role_type: Job["roleType"] | null;
+  work_mode: Job["workMode"] | null;
+  seniority: Job["seniority"] | null;
+  location_query: string | null;
+  tech_query: string | null;
+  salary_min: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+function mapSavedAlertRow(row: SavedAlertRow): SavedAlert {
+  return {
+    id: Number(row.id),
+    name: row.name,
+    webhookUrl: row.webhook_url,
+    filters: sanitizeAlertFilters({
+      roleType: row.role_type ?? undefined,
+      workMode: row.work_mode ?? undefined,
+      seniority: row.seniority ?? undefined,
+      locationQuery: row.location_query ?? undefined,
+      techQuery: row.tech_query ?? undefined,
+      salaryMin: row.salary_min ?? undefined,
+    }),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function listSavedAlerts(): Promise<SavedAlert[]> {
+  const sql = getSql();
+  if (!sql) {
+    return [];
+  }
+
+  await ensureSchema();
+  const rows = await sql<SavedAlertRow[]>`
+    select
+      id,
+      name,
+      webhook_url,
+      role_type,
+      work_mode,
+      seniority,
+      location_query,
+      tech_query,
+      salary_min,
+      created_at,
+      updated_at
+    from saved_alerts
+    order by created_at desc
+  `;
+
+  return rows.map(mapSavedAlertRow);
+}
+
+export async function createSavedAlert(input: {
+  name: string;
+  webhookUrl: string;
+  filters: JobFilterSnapshot;
+}): Promise<SavedAlert> {
+  const sql = getSql();
+  if (!sql) {
+    throw new Error("Database is not configured.");
+  }
+
+  await ensureSchema();
+  const name = input.name.trim();
+  const webhookUrl = input.webhookUrl.trim();
+  if (!name) {
+    throw new Error("Alert name is required.");
+  }
+  if (!webhookUrl) {
+    throw new Error("Webhook URL is required.");
+  }
+
+  let parsedWebhook: URL;
+  try {
+    parsedWebhook = new URL(webhookUrl);
+  } catch {
+    throw new Error("Webhook URL is invalid.");
+  }
+
+  if (parsedWebhook.protocol !== "https:") {
+    throw new Error("Webhook URL must use HTTPS.");
+  }
+
+  const filters = sanitizeAlertFilters(input.filters);
+  const [row] = await sql<SavedAlertRow[]>`
+    insert into saved_alerts (
+      name,
+      webhook_url,
+      role_type,
+      work_mode,
+      seniority,
+      location_query,
+      tech_query,
+      salary_min,
+      updated_at
+    )
+    values (
+      ${name},
+      ${parsedWebhook.toString()},
+      ${filters.roleType ?? null},
+      ${filters.workMode ?? null},
+      ${filters.seniority ?? null},
+      ${filters.locationQuery ?? null},
+      ${filters.techQuery ?? null},
+      ${filters.salaryMin ?? null},
+      now()
+    )
+    returning
+      id,
+      name,
+      webhook_url,
+      role_type,
+      work_mode,
+      seniority,
+      location_query,
+      tech_query,
+      salary_min,
+      created_at,
+      updated_at
+  `;
+
+  return mapSavedAlertRow(row);
+}
+
+export async function deleteSavedAlert(alertId: number): Promise<boolean> {
+  const sql = getSql();
+  if (!sql) {
+    return false;
+  }
+
+  await ensureSchema();
+  const result = await sql`
+    delete from saved_alerts
+    where id = ${alertId}
+  `;
+
+  return (result.count ?? 0) > 0;
+}
+
+function doesJobMatchFilters(job: Job, filters: JobFilterSnapshot) {
+  if (filters.roleType && job.roleType !== filters.roleType) {
+    return false;
+  }
+  if (filters.workMode && job.workMode !== filters.workMode) {
+    return false;
+  }
+  if (filters.seniority && job.seniority !== filters.seniority) {
+    return false;
+  }
+  if (filters.salaryMin && (!job.salaryMin || job.salaryMin < filters.salaryMin)) {
+    return false;
+  }
+  if (
+    filters.locationQuery &&
+    !job.location.toLowerCase().includes(filters.locationQuery.toLowerCase())
+  ) {
+    return false;
+  }
+  if (
+    filters.techQuery &&
+    !job.technologies.some((technology) =>
+      technology.toLowerCase().includes(filters.techQuery!.toLowerCase()),
+    )
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+interface JobForAlertRow {
+  id: string;
+  source: Job["source"];
+  source_job_id: string;
+  source_url: string;
+  apply_url: string | null;
+  title: string;
+  company: string;
+  location_raw: string;
+  role_type: Job["roleType"];
+  work_mode: Job["workMode"];
+  seniority: Job["seniority"];
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_currency: string | null;
+  posted_at: string;
+  technologies: string[];
+  first_seen_at: string;
+  last_seen_at: string;
+  is_active: boolean;
+}
+
+function mapAlertJob(row: JobForAlertRow): Job {
+  return {
+    id: `${row.source}:${row.source_job_id}`,
+    title: row.title,
+    company: row.company,
+    location: row.location_raw,
+    roleType: row.role_type,
+    seniority: row.seniority,
+    salaryMin: row.salary_min ?? undefined,
+    salaryMax: row.salary_max ?? undefined,
+    salaryCurrency: row.salary_currency ?? undefined,
+    postedAt: row.posted_at,
+    technologies: row.technologies ?? [],
+    workMode: row.work_mode,
+    source: row.source,
+    sourceUrl: row.source_url,
+    applyUrl: row.apply_url ?? undefined,
+    firstSeenAt: row.first_seen_at,
+    lastSeenAt: row.last_seen_at,
+    isActive: row.is_active,
+  };
+}
+
+export async function dispatchAlertsForNewJobs(runStartedAt: string) {
+  const sql = getSql();
+  if (!sql) {
+    return { attempted: 0, sent: 0, failed: 0, matchedJobs: 0 };
+  }
+
+  await ensureSchema();
+
+  const [alerts, jobRows] = await Promise.all([
+    listSavedAlerts(),
+    sql<JobForAlertRow[]>`
+      select
+        jobs.id,
+        jobs.source,
+        jobs.source_job_id,
+        jobs.source_url,
+        jobs.apply_url,
+        jobs.title,
+        companies.name as company,
+        jobs.location_raw,
+        jobs.role_type,
+        jobs.work_mode,
+        jobs.seniority,
+        jobs.salary_min,
+        jobs.salary_max,
+        jobs.salary_currency,
+        jobs.posted_at,
+        jobs.technologies,
+        jobs.first_seen_at,
+        jobs.last_seen_at,
+        jobs.is_active
+      from jobs
+      inner join companies on companies.id = jobs.company_id
+      where jobs.is_active = true
+        and jobs.first_seen_at >= ${runStartedAt}
+      order by jobs.first_seen_at desc
+    `,
+  ]);
+
+  const jobs = jobRows.map((row) => ({
+    internalId: Number(row.id),
+    job: mapAlertJob(row),
+  }));
+
+  let attempted = 0;
+  let sent = 0;
+  let failed = 0;
+  let matchedJobs = 0;
+
+  for (const alert of alerts) {
+    const matched = jobs.filter((entry) =>
+      doesJobMatchFilters(entry.job, alert.filters),
+    );
+    if (matched.length === 0) {
+      continue;
+    }
+
+    matchedJobs += matched.length;
+    attempted += 1;
+
+    let status: "sent" | "failed" = "sent";
+    let errorMessage: string | null = null;
+
+    try {
+      const response = await fetch(alert.webhookUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          alert: {
+            id: alert.id,
+            name: alert.name,
+            filters: alert.filters,
+          },
+          sentAt: new Date().toISOString(),
+          matchCount: matched.length,
+          jobs: matched.map((entry) => entry.job),
+        }),
+      });
+
+      if (!response.ok) {
+        status = "failed";
+        errorMessage = `Webhook returned ${response.status}`;
+      }
+    } catch (error) {
+      status = "failed";
+      errorMessage = error instanceof Error ? error.message : "Unknown webhook error";
+    }
+
+    for (const entry of matched) {
+      await sql`
+        insert into alert_notifications (
+          alert_id,
+          job_id,
+          sent_at,
+          delivery_status,
+          error_message
+        )
+        values (
+          ${alert.id},
+          ${entry.internalId},
+          now(),
+          ${status},
+          ${errorMessage}
+        )
+        on conflict (alert_id, job_id)
+        do nothing
+      `;
+    }
+
+    if (status === "sent") {
+      sent += 1;
+    } else {
+      failed += 1;
+    }
+  }
+
+  return { attempted, sent, failed, matchedJobs };
 }
 
 export async function syncCompanySources(
