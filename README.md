@@ -8,7 +8,7 @@ This is a study project for practicing Cursor best practices, the BMAD method, a
 
 - Fetches normalized job data from server-side API routes
 - Displays top-level counts for total, SWE, and data roles
-- Filters listings by role type and work mode
+- Filters listings by role type, work mode, seniority, location, tech keyword, and salary floor
 - Shows work mode distribution and posting volume over time
 - Renders a table of individual roles with salary, posting date, tech stack, and source links
 - Supports scheduled ingestion from live ATS feeds

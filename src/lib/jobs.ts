@@ -4,13 +4,15 @@ export type WorkMode = "remote" | "hybrid" | "onsite";
 
 export type JobSource = "greenhouse" | "lever" | "ashby";
 
+export type Seniority = "junior" | "mid" | "senior";
+
 export interface Job {
   id: string;
   title: string;
   company: string;
   location: string;
   roleType: RoleType;
-  seniority: "junior" | "mid" | "senior";
+  seniority: Seniority;
   salaryMin?: number;
   salaryMax?: number;
   salaryCurrency?: string;

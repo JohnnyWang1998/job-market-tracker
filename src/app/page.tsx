@@ -10,7 +10,14 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { Job, JobsResponse, JobSource, RoleType, WorkMode } from "@/lib/jobs";
+import type {
+  Job,
+  JobsResponse,
+  JobSource,
+  RoleType,
+  Seniority,
+  WorkMode,
+} from "@/lib/jobs";
 
 type TimeRange = 7 | 14 | 30;
 
@@ -28,6 +35,12 @@ export default function Home() {
   const [workModeFilter, setWorkModeFilter] = useState<WorkMode | "all">(
     "all",
   );
+  const [seniorityFilter, setSeniorityFilter] = useState<Seniority | "all">(
+    "all",
+  );
+  const [locationQuery, setLocationQuery] = useState("");
+  const [techQuery, setTechQuery] = useState("");
+  const [salaryMinFilter, setSalaryMinFilter] = useState("");
   const [timeRange, setTimeRange] = useState<TimeRange>(14);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 25;
@@ -61,13 +74,53 @@ export default function Home() {
       if (roleFilter !== "all" && job.roleType !== roleFilter) return false;
       if (workModeFilter !== "all" && job.workMode !== workModeFilter)
         return false;
+      if (seniorityFilter !== "all" && job.seniority !== seniorityFilter)
+        return false;
+      if (
+        locationQuery.trim() &&
+        !job.location.toLowerCase().includes(locationQuery.trim().toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        techQuery.trim() &&
+        !job.technologies.some((technology) =>
+          technology.toLowerCase().includes(techQuery.trim().toLowerCase()),
+        )
+      ) {
+        return false;
+      }
+      const salaryMin = Number(salaryMinFilter);
+      if (
+        Number.isFinite(salaryMin) &&
+        salaryMin > 0 &&
+        (!job.salaryMin || job.salaryMin < salaryMin)
+      ) {
+        return false;
+      }
       return true;
     });
-  }, [data, roleFilter, workModeFilter]);
+  }, [
+    data,
+    locationQuery,
+    roleFilter,
+    salaryMinFilter,
+    seniorityFilter,
+    techQuery,
+    workModeFilter,
+  ]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [roleFilter, workModeFilter, data?.fetchedAt]);
+  }, [
+    roleFilter,
+    workModeFilter,
+    seniorityFilter,
+    locationQuery,
+    techQuery,
+    salaryMinFilter,
+    data?.fetchedAt,
+  ]);
 
   const totalPages = Math.max(Math.ceil(filteredJobs.length / pageSize), 1);
   const safeCurrentPage = Math.min(currentPage, totalPages);
@@ -188,62 +241,125 @@ export default function Home() {
           </section>
         ) : null}
 
-        <section className="flex flex-wrap items-center gap-4 rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
-          <div className="flex flex-col gap-1 text-sm">
-            <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-              Role type
-            </span>
-            <div className="inline-flex rounded-full bg-zinc-100 p-1 text-xs dark:bg-zinc-900">
-              {[
-                { label: "All", value: "all" },
-                { label: "SWE", value: "swe" },
-                { label: "Data", value: "data" },
-              ].map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() =>
-                    setRoleFilter(option.value as RoleType | "all")
-                  }
-                  className={`rounded-full px-3 py-1 font-medium transition ${
-                    roleFilter === option.value
-                      ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50"
-                      : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
+        <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                Role type
+              </span>
+              <div className="inline-flex rounded-full bg-zinc-100 p-1 text-xs dark:bg-zinc-900">
+                {[
+                  { label: "All", value: "all" },
+                  { label: "SWE", value: "swe" },
+                  { label: "Data", value: "data" },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() =>
+                      setRoleFilter(option.value as RoleType | "all")
+                    }
+                    className={`rounded-full px-3 py-1 font-medium transition ${
+                      roleFilter === option.value
+                        ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50"
+                        : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                Work mode
+              </span>
+              <div className="inline-flex rounded-full bg-zinc-100 p-1 text-xs dark:bg-zinc-900">
+                {[
+                  { label: "All", value: "all" },
+                  { label: "Remote", value: "remote" },
+                  { label: "Hybrid", value: "hybrid" },
+                  { label: "On-site", value: "onsite" },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() =>
+                      setWorkModeFilter(option.value as WorkMode | "all")
+                    }
+                    className={`rounded-full px-3 py-1 font-medium transition ${
+                      workModeFilter === option.value
+                        ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50"
+                        : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                Seniority
+              </span>
+              <div className="inline-flex rounded-full bg-zinc-100 p-1 text-xs dark:bg-zinc-900">
+                {[
+                  { label: "All", value: "all" },
+                  { label: "Junior", value: "junior" },
+                  { label: "Mid", value: "mid" },
+                  { label: "Senior", value: "senior" },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() =>
+                      setSeniorityFilter(option.value as Seniority | "all")
+                    }
+                    className={`rounded-full px-3 py-1 font-medium transition ${
+                      seniorityFilter === option.value
+                        ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50"
+                        : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
-          <div className="flex flex-col gap-1 text-sm">
-            <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-              Work mode
-            </span>
-            <div className="inline-flex rounded-full bg-zinc-100 p-1 text-xs dark:bg-zinc-900">
-              {[
-                { label: "All", value: "all" },
-                { label: "Remote", value: "remote" },
-                { label: "Hybrid", value: "hybrid" },
-                { label: "On-site", value: "onsite" },
-              ].map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() =>
-                    setWorkModeFilter(option.value as WorkMode | "all")
-                  }
-                  className={`rounded-full px-3 py-1 font-medium transition ${
-                    workModeFilter === option.value
-                      ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50"
-                      : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <label className="flex flex-col gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+              Location contains
+              <input
+                value={locationQuery}
+                onChange={(event) => setLocationQuery(event.target.value)}
+                placeholder="e.g. New York"
+                className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+              Tech contains
+              <input
+                value={techQuery}
+                onChange={(event) => setTechQuery(event.target.value)}
+                placeholder="e.g. Python"
+                className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+              Salary min (USD)
+              <input
+                type="number"
+                min={0}
+                value={salaryMinFilter}
+                onChange={(event) => setSalaryMinFilter(event.target.value)}
+                placeholder="e.g. 180000"
+                className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              />
+            </label>
           </div>
         </section>
 
