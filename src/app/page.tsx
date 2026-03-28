@@ -496,6 +496,7 @@ export default function Home() {
                   <th className="py-2 pr-4">Source</th>
                   <th className="py-2 pr-4">Location</th>
                   <th className="py-2 pr-4">Role</th>
+                  <th className="py-2 pr-4">Seniority</th>
                   <th className="py-2 pr-4">Mode</th>
                   <th className="py-2 pr-4">Salary</th>
                   <th className="py-2 pr-4">Posted</th>
@@ -509,7 +510,7 @@ export default function Home() {
                 {filteredJobs.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={9}
+                      colSpan={10}
                       className="py-6 text-center text-sm text-zinc-500 dark:text-zinc-400"
                     >
                       {loading
@@ -614,6 +615,9 @@ function JobRow({ job }: { job: Job }) {
       </td>
       <td className="py-3 pr-4 text-xs uppercase text-zinc-600 dark:text-zinc-400">
         {job.roleType === "swe" ? "SWE" : "Data"}
+      </td>
+      <td className="py-3 pr-4 text-xs capitalize text-zinc-600 dark:text-zinc-400">
+        {job.seniority}
       </td>
       <td className="py-3 pr-4 text-xs capitalize text-zinc-600 dark:text-zinc-400">
         {job.workMode}
