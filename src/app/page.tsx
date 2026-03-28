@@ -139,17 +139,38 @@ export default function Home() {
   const sweJobs = filteredJobs.filter((job) => job.roleType === "swe").length;
   const dataJobs = filteredJobs.filter((job) => job.roleType === "data").length;
 
+  const roleTypeCounts: Record<RoleType, number> = useMemo(() => {
+    const counts: Record<RoleType, number> = {
+      swe: 0,
+      data: 0,
+    };
+    for (const job of filteredJobs) {
+      counts[job.roleType] += 1;
+    }
+    return counts;
+  }, [filteredJobs]);
+
   const workModeCounts: Record<WorkMode, number> = useMemo(() => {
     const counts: Record<WorkMode, number> = {
       remote: 0,
       hybrid: 0,
       onsite: 0,
     };
-
     for (const job of filteredJobs) {
       counts[job.workMode] += 1;
     }
+    return counts;
+  }, [filteredJobs]);
 
+  const seniorityCounts: Record<Seniority, number> = useMemo(() => {
+    const counts: Record<Seniority, number> = {
+      junior: 0,
+      mid: 0,
+      senior: 0,
+    };
+    for (const job of filteredJobs) {
+      counts[job.seniority] += 1;
+    }
     return counts;
   }, [filteredJobs]);
 
@@ -370,39 +391,100 @@ export default function Home() {
         </section>
 
         <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Roles by work mode</h2>
-          </div>
-          <div className="mt-3 space-y-3">
-            {(["remote", "hybrid", "onsite"] as WorkMode[]).map((mode) => {
-              const count = workModeCounts[mode];
-              const percent = totalJobs > 0 ? (count / totalJobs) * 100 : 0;
-              const label =
-                mode === "remote"
-                  ? "Remote"
-                  : mode === "hybrid"
-                    ? "Hybrid"
-                    : "On-site";
+          <h2 className="text-sm font-semibold">Role breakdowns</h2>
 
-              return (
-                <div key={mode} className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-zinc-700 dark:text-zinc-300">
-                      {label}
-                    </span>
-                    <span className="text-zinc-500 dark:text-zinc-400">
-                      {count} roles ({percent.toFixed(0)}%)
-                    </span>
+          <div className="mt-4 grid gap-6 lg:grid-cols-3">
+            <div className="space-y-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                Role type
+              </h3>
+              {[
+                { key: "swe", label: "SWE", count: roleTypeCounts.swe },
+                { key: "data", label: "Data", count: roleTypeCounts.data },
+              ].map((bucket) => {
+                const percent = totalJobs > 0 ? (bucket.count / totalJobs) * 100 : 0;
+                return (
+                  <div key={bucket.key} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                        {bucket.label}
+                      </span>
+                      <span className="text-zinc-500 dark:text-zinc-400">
+                        {bucket.count} roles ({percent.toFixed(0)}%)
+                      </span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-md bg-zinc-100 dark:bg-zinc-900">
+                      <div
+                        className="h-full rounded-md bg-gradient-to-r from-blue-500 to-cyan-500"
+                        style={{ width: `${Math.max(percent, bucket.count > 0 ? 2 : 0)}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="h-2 w-full overflow-hidden rounded-md bg-zinc-100 dark:bg-zinc-900">
-                    <div
-                      className="h-full rounded-md bg-gradient-to-r from-zinc-900 to-zinc-600 dark:from-zinc-100 dark:to-zinc-300"
-                      style={{ width: `${Math.max(percent, count > 0 ? 2 : 0)}%` }}
-                    />
+                );
+              })}
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                Work mode
+              </h3>
+              {[
+                { key: "remote", label: "Remote", count: workModeCounts.remote },
+                { key: "hybrid", label: "Hybrid", count: workModeCounts.hybrid },
+                { key: "onsite", label: "On-site", count: workModeCounts.onsite },
+              ].map((bucket) => {
+                const percent = totalJobs > 0 ? (bucket.count / totalJobs) * 100 : 0;
+                return (
+                  <div key={bucket.key} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                        {bucket.label}
+                      </span>
+                      <span className="text-zinc-500 dark:text-zinc-400">
+                        {bucket.count} roles ({percent.toFixed(0)}%)
+                      </span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-md bg-zinc-100 dark:bg-zinc-900">
+                      <div
+                        className="h-full rounded-md bg-gradient-to-r from-emerald-500 to-teal-500"
+                        style={{ width: `${Math.max(percent, bucket.count > 0 ? 2 : 0)}%` }}
+                      />
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                Seniority
+              </h3>
+              {[
+                { key: "junior", label: "Junior", count: seniorityCounts.junior },
+                { key: "mid", label: "Mid", count: seniorityCounts.mid },
+                { key: "senior", label: "Senior", count: seniorityCounts.senior },
+              ].map((bucket) => {
+                const percent = totalJobs > 0 ? (bucket.count / totalJobs) * 100 : 0;
+                return (
+                  <div key={bucket.key} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                        {bucket.label}
+                      </span>
+                      <span className="text-zinc-500 dark:text-zinc-400">
+                        {bucket.count} roles ({percent.toFixed(0)}%)
+                      </span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-md bg-zinc-100 dark:bg-zinc-900">
+                      <div
+                        className="h-full rounded-md bg-gradient-to-r from-amber-500 to-orange-500"
+                        style={{ width: `${Math.max(percent, bucket.count > 0 ? 2 : 0)}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </section>
 
