@@ -1,7 +1,12 @@
 import postgres from "postgres";
 import sampleJobs from "../../data/jobs-sample.json";
 import type { CompanySourceConfig } from "@/lib/company-sources";
-import type { Job, JobsResponse } from "@/lib/jobs";
+import type {
+  Job,
+  JobsResponse,
+  SeniorityTrendPoint,
+  SeniorityTrendResponse,
+} from "@/lib/jobs";
 import type { NormalizedJobRecord } from "@/lib/providers";
 
 let sqlClient: postgres.Sql | null = null;
@@ -49,6 +54,49 @@ function getSampleJobs(): Job[] {
     lastSeenAt: new Date().toISOString(),
     isActive: true,
   }));
+}
+
+function toMonthKey(date: Date) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(
+    2,
+    "0",
+  )}`;
+}
+
+function makeMonthWindow(months: number) {
+  const monthKeys: string[] = [];
+  const today = new Date();
+  const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+  start.setUTCMonth(start.getUTCMonth() - (months - 1));
+
+  for (let i = 0; i < months; i += 1) {
+    const month = new Date(start);
+    month.setUTCMonth(start.getUTCMonth() + i);
+    monthKeys.push(toMonthKey(month));
+  }
+
+  return monthKeys;
+}
+
+function buildSenioritySeriesFromJobs(jobs: Job[], months: number): SeniorityTrendPoint[] {
+  const monthKeys = makeMonthWindow(months);
+  const byMonth = new Map(
+    monthKeys.map((month) => [
+      month,
+      { month, junior: 0, mid: 0, senior: 0 } satisfies SeniorityTrendPoint,
+    ]),
+  );
+
+  for (const job of jobs) {
+    const key = toMonthKey(new Date(job.postedAt));
+    const bucket = byMonth.get(key);
+    if (!bucket) {
+      continue;
+    }
+    bucket[job.seniority] += 1;
+  }
+
+  return monthKeys.map((month) => byMonth.get(month)!);
 }
 
 export async function ensureSchema() {
@@ -421,5 +469,74 @@ export async function getJobsResponse(): Promise<JobsResponse> {
     fetchedAt: latestRun?.fetched_at ?? new Date().toISOString(),
     mode: "live",
     providers: ["greenhouse", "lever", "ashby"],
+  };
+}
+
+export async function getSeniorityTrendResponse(
+  months = 24,
+): Promise<SeniorityTrendResponse> {
+  const clampedMonths = Math.max(1, Math.min(months, 36));
+  const sql = getSql();
+
+  if (!sql) {
+    const jobs = getSampleJobs();
+    return {
+      months: clampedMonths,
+      series: buildSenioritySeriesFromJobs(jobs, clampedMonths),
+      fetchedAt: new Date().toISOString(),
+      mode: "sample",
+    };
+  }
+
+  await ensureSchema();
+
+  const rows = await sql<
+    Array<{
+      month: string;
+      seniority: Job["seniority"];
+      count: number;
+    }>
+  >`
+    with months as (
+      select generate_series(
+        date_trunc('month', now()) - (${clampedMonths - 1}::text || ' months')::interval,
+        date_trunc('month', now()),
+        interval '1 month'
+      ) as month_start
+    )
+    select
+      to_char(months.month_start, 'YYYY-MM') as month,
+      jobs.seniority,
+      count(jobs.id)::int as count
+    from months
+    left join jobs on date_trunc('month', jobs.posted_at) = months.month_start
+    group by months.month_start, jobs.seniority
+    order by months.month_start asc
+  `;
+
+  const monthKeys = makeMonthWindow(clampedMonths);
+  const byMonth = new Map(
+    monthKeys.map((month) => [
+      month,
+      { month, junior: 0, mid: 0, senior: 0 } satisfies SeniorityTrendPoint,
+    ]),
+  );
+
+  for (const row of rows) {
+    if (!row.seniority) {
+      continue;
+    }
+    const bucket = byMonth.get(row.month);
+    if (!bucket) {
+      continue;
+    }
+    bucket[row.seniority] = row.count;
+  }
+
+  return {
+    months: clampedMonths,
+    series: monthKeys.map((month) => byMonth.get(month)!),
+    fetchedAt: new Date().toISOString(),
+    mode: "live",
   };
 }

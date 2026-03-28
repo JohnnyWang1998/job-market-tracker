@@ -10,6 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { NavTabs } from "@/components/nav-tabs";
 import type {
   Job,
   JobsResponse,
@@ -242,17 +243,7 @@ export default function Home() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => void refreshJobs()}
-              disabled={loading}
-              className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-50 shadow-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-            >
-              {loading ? "Refreshing…" : "Refresh data"}
-            </button>
-            <div className="text-xs text-zinc-500 dark:text-zinc-400">
-              {lastUpdated ? `Last ingested: ${lastUpdated}` : "Loading…"}
-            </div>
+            <NavTabs />
           </div>
         </header>
 
@@ -263,6 +254,22 @@ export default function Home() {
         ) : null}
 
         <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold">Live Tracker Controls</h2>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void refreshJobs()}
+                disabled={loading}
+                className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-50 shadow-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                {loading ? "Refreshing…" : "Refresh data"}
+              </button>
+              <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                {lastUpdated ? `Last ingested: ${lastUpdated}` : "Loading…"}
+              </div>
+            </div>
+          </div>
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex flex-col gap-1 text-sm">
               <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">

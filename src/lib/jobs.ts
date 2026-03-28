@@ -33,3 +33,17 @@ export interface JobsResponse {
   mode?: "live" | "sample";
   providers?: JobSource[];
 }
+
+export interface SeniorityTrendPoint {
+  month: string; // YYYY-MM
+  junior: number;
+  mid: number;
+  senior: number;
+}
+
+export interface SeniorityTrendResponse {
+  months: number;
+  series: SeniorityTrendPoint[];
+  fetchedAt: string;
+  mode: "live" | "sample";
+}
