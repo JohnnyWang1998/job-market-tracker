@@ -175,7 +175,9 @@ Make macro analytics dependable for decision support.
 - Error categorization in ingest summary (`network`, `rate_limit`, `provider_4xx`, `provider_5xx`, `parse_error`, `db_error`, `unknown`)
 - Ingest health API for dashboarding: `/api/analytics/ingest-health?hours=168`
 - Auto-disable policy for repeated failures with cooldown (`skipped` runs)
+- Source registry contract with strict validation (`data/source-registry.json`, `JOB_SOURCES_REGISTRY_PATH`)
+- Dry-run validation endpoint: `/api/cron/validate-sources`
 
 2. Remaining high-priority items:
-- Source onboarding schema contract beyond env JSON
 - Alerting pipeline (run failure, source failure spike, anomaly detection)
+- Batch onboarding workflow (target list, provider-first rollout, runbook)

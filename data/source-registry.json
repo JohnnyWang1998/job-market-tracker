@@ -1,0 +1,47 @@
+[
+  {
+    "slug": "stripe",
+    "companyName": "Stripe",
+    "provider": "greenhouse",
+    "boardToken": "stripe",
+    "enabled": true,
+    "hqLocation": "San Francisco, CA",
+    "priorityTier": "high",
+    "ingestCadence": "daily",
+    "owner": "platform",
+    "notes": "Core benchmark fintech source"
+  },
+  {
+    "slug": "vercel",
+    "companyName": "Vercel",
+    "provider": "greenhouse",
+    "boardToken": "vercel",
+    "enabled": true,
+    "hqLocation": "San Francisco, CA",
+    "priorityTier": "medium",
+    "ingestCadence": "daily",
+    "owner": "platform"
+  },
+  {
+    "slug": "plaid",
+    "companyName": "Plaid",
+    "provider": "lever",
+    "boardToken": "plaid",
+    "enabled": true,
+    "hqLocation": "San Francisco, CA",
+    "priorityTier": "medium",
+    "ingestCadence": "daily",
+    "owner": "platform"
+  },
+  {
+    "slug": "openai",
+    "companyName": "OpenAI",
+    "provider": "ashby",
+    "boardToken": "openai",
+    "enabled": true,
+    "hqLocation": "San Francisco, CA",
+    "priorityTier": "high",
+    "ingestCadence": "daily",
+    "owner": "platform"
+  }
+]

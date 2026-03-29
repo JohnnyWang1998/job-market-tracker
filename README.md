@@ -59,6 +59,7 @@ Environment variables:
 
 - `DATABASE_URL` for Postgres
 - `CRON_SECRET` for the ingestion endpoint
+- `JOB_SOURCES_REGISTRY_PATH` file path to the source registry JSON (default `./data/source-registry.json`)
 - `JOB_SOURCES_JSON` to fully override the default source list
 - `JOB_SOURCES_APPEND_JSON` to append extra sources on top of defaults
 - `INGEST_PROVIDER_CONCURRENCY` max concurrent ingests per provider (default `2`)
@@ -91,7 +92,9 @@ When failure streak policy is triggered, a source run is recorded as `skipped` a
 
 ### Expanding Coverage Quickly
 
-Use `JOB_SOURCES_JSON` or `JOB_SOURCES_APPEND_JSON` to ingest many more companies without code changes. Values must be JSON arrays of:
+Preferred flow: maintain `data/source-registry.json` (or set `JOB_SOURCES_REGISTRY_PATH`) and validate before ingest.
+
+You can still use `JOB_SOURCES_JSON` (override) and `JOB_SOURCES_APPEND_JSON` (append) when needed. Values must be JSON arrays of:
 
 ```json
 {
@@ -100,7 +103,11 @@ Use `JOB_SOURCES_JSON` or `JOB_SOURCES_APPEND_JSON` to ingest many more companie
   "provider": "greenhouse | lever | ashby",
   "boardToken": "public-board-token",
   "enabled": true,
-  "hqLocation": "City, ST"
+  "hqLocation": "City, ST",
+  "priorityTier": "high | medium | low",
+  "ingestCadence": "twice_daily | daily | weekly",
+  "owner": "team-or-person",
+  "notes": "optional"
 }
 ```
 
@@ -110,6 +117,20 @@ Examples:
 JOB_SOURCES_JSON='[{"slug":"stripe","companyName":"Stripe","provider":"greenhouse","boardToken":"stripe","enabled":true,"hqLocation":"San Francisco, CA"},{"slug":"openai","companyName":"OpenAI","provider":"ashby","boardToken":"openai","enabled":true,"hqLocation":"San Francisco, CA"}]'
 JOB_SOURCES_APPEND_JSON='[{"slug":"datadog","companyName":"Datadog","provider":"greenhouse","boardToken":"datadog","enabled":true,"hqLocation":"New York, NY"}]'
 ```
+
+### Source Validation Dry Run
+
+Validate source config before ingest (no DB writes):
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  http://localhost:3000/api/cron/validate-sources
+```
+
+Response includes:
+- `ok`, `errors`, `warnings`
+- source counts (`sourceCount`, `enabledCount`, `providerCounts`)
+- `sampleSources` preview
 
 ### Production Ingest Trigger
 
@@ -147,6 +168,7 @@ Response includes:
 src/
   app/
     api/cron/ingest/route.ts   Scheduled ingestion endpoint
+    api/cron/validate-sources/route.ts   Source config dry-run validator
     api/jobs/route.ts   API endpoint for job data
     page.tsx            Dashboard UI
     layout.tsx          App shell and metadata
@@ -158,6 +180,7 @@ src/
     ingest.ts           Ingestion workflow
 data/
   jobs-sample.json      Local sample dataset
+  source-registry.json  Source onboarding registry
 ```
 
 ## Notes

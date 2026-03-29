@@ -1,4 +1,4 @@
-import { getCompanySources } from "@/lib/company-sources";
+import { getCompanySources, getCompanySourcesValidation } from "@/lib/company-sources";
 import {
   createIngestRun,
   ensureSchema,
@@ -254,7 +254,40 @@ export async function ingestAllSources(): Promise<IngestSummary> {
   }
 
   await ensureSchema();
-  const sources = getCompanySources().filter((source) => source.enabled);
+  let sources: CompanySourceConfig[];
+  try {
+    sources = getCompanySources().filter((source) => source.enabled);
+  } catch (error) {
+    const validation = getCompanySourcesValidation();
+    const message = toErrorMessage(error);
+    return {
+      sourcesProcessed: 0,
+      skippedCount: 0,
+      fetchedCount: 0,
+      upsertedCount: 0,
+      deactivatedCount: 0,
+      mode: "live",
+      errors: [{ source: "source-config", message }],
+      sourceResults: [],
+      alerts: [
+        {
+          level: "critical",
+          code: "source_failure",
+          source: "source-config",
+          message,
+        },
+        ...validation.issues
+          .filter((issue) => issue.level === "warning")
+          .slice(0, 5)
+          .map((issue) => ({
+            level: "warn" as const,
+            code: "source_failure" as const,
+            source: issue.sourceSlug ?? "source-config",
+            message: issue.message,
+          })),
+      ],
+    };
+  }
   const companyIds = await syncCompanySources(sources);
 
   const summary: IngestSummary = {
