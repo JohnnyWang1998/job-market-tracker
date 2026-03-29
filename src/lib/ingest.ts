@@ -1,27 +1,256 @@
-import { getCompanySources } from "@/lib/company-sources";
+import { getCompanySources, getCompanySourcesValidation } from "@/lib/company-sources";
 import {
   createIngestRun,
   ensureSchema,
   finalizeIngestRun,
+  getSourceIngestGate,
   hasDatabase,
   syncCompanySources,
   upsertJobs,
 } from "@/lib/db";
 import { fetchSourceJobs } from "@/lib/providers";
+import type { CompanySourceConfig } from "@/lib/company-sources";
+
+type IngestErrorCategory =
+  | "auto_disabled"
+  | "network"
+  | "rate_limit"
+  | "provider_4xx"
+  | "provider_5xx"
+  | "parse_error"
+  | "db_error"
+  | "unknown";
+
+interface SourceIngestResult {
+  source: string;
+  provider: CompanySourceConfig["provider"];
+  status: "success" | "failed" | "skipped";
+  fetchedCount: number;
+  upsertedCount: number;
+  deactivatedCount: number;
+  attemptCount: number;
+  durationMs: number;
+  errorCategory?: IngestErrorCategory;
+  errorMessage?: string;
+  skipReason?: string;
+}
+
+interface IngestAlert {
+  level: "info" | "warn" | "critical";
+  code:
+    | "source_failure"
+    | "source_skipped"
+    | "failure_spike"
+    | "high_retry_volume";
+  message: string;
+  source?: string;
+}
+
+class RetryAttemptsExceededError extends Error {
+  attemptCount: number;
+  causeError: unknown;
+
+  constructor(message: string, attemptCount: number, causeError: unknown) {
+    super(message);
+    this.name = "RetryAttemptsExceededError";
+    this.attemptCount = attemptCount;
+    this.causeError = causeError;
+  }
+}
 
 export interface IngestSummary {
   sourcesProcessed: number;
+  skippedCount: number;
   fetchedCount: number;
   upsertedCount: number;
   deactivatedCount: number;
   mode: "live" | "sample";
   errors: Array<{ source: string; message: string }>;
+  sourceResults: SourceIngestResult[];
+  alerts: IngestAlert[];
+}
+
+function parsePositiveInt(raw: string | undefined, fallback: number) {
+  if (!raw) {
+    return fallback;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function toErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Unknown ingest failure";
+}
+
+function classifyError(error: unknown): IngestErrorCategory {
+  const message = toErrorMessage(error).toLowerCase();
+  const statusMatch = message.match(/\b([45]\d{2})\b/);
+  const statusCode = statusMatch ? Number.parseInt(statusMatch[1], 10) : NaN;
+  if (message.includes("request failed") || message.includes("fetch failed")) {
+    if (statusCode === 429 || message.includes("429")) {
+      return "rate_limit";
+    }
+    if (statusCode >= 400 && statusCode < 500) {
+      return "provider_4xx";
+    }
+    if (statusCode >= 500 && statusCode < 600) {
+      return "provider_5xx";
+    }
+    return "network";
+  }
+  if (message.includes("parse") || message.includes("json")) {
+    return "parse_error";
+  }
+  if (message.includes("db") || message.includes("sql") || message.includes("postgres")) {
+    return "db_error";
+  }
+  return "unknown";
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function buildIngestAlerts(summary: IngestSummary): IngestAlert[] {
+  const alerts: IngestAlert[] = [];
+
+  for (const result of summary.sourceResults) {
+    if (result.status === "failed") {
+      alerts.push({
+        level: "warn",
+        code: "source_failure",
+        source: result.source,
+        message: `Source ${result.source} failed: ${result.errorMessage ?? "unknown error"}`,
+      });
+    }
+    if (result.status === "skipped") {
+      alerts.push({
+        level: "warn",
+        code: "source_skipped",
+        source: result.source,
+        message: `Source ${result.source} skipped: ${result.skipReason ?? "auto-disabled"}`,
+      });
+    }
+  }
+
+  const failedCount = summary.sourceResults.filter(
+    (result) => result.status === "failed",
+  ).length;
+  const highRetryCount = summary.sourceResults.filter(
+    (result) => result.status === "success" && result.attemptCount > 1,
+  ).length;
+  const processedCount = summary.sourceResults.length;
+  const failureRatio = processedCount > 0 ? failedCount / processedCount : 0;
+
+  if (failureRatio >= 0.2 && failedCount > 0) {
+    alerts.push({
+      level: failureRatio >= 0.5 ? "critical" : "warn",
+      code: "failure_spike",
+      message: `Failure spike detected: ${failedCount}/${processedCount} sources failed in this run`,
+    });
+  }
+
+  if (highRetryCount >= 3) {
+    alerts.push({
+      level: "info",
+      code: "high_retry_volume",
+      message: `${highRetryCount} sources required retries in this run`,
+    });
+  }
+
+  return alerts;
+}
+
+async function withRetry<T>(
+  task: () => Promise<T>,
+  maxAttempts: number,
+  baseBackoffMs: number,
+): Promise<{ value: T; attemptCount: number }> {
+  let lastError: unknown;
+  let attemptsUsed = 0;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    attemptsUsed = attempt;
+    try {
+      return { value: await task(), attemptCount: attempt };
+    } catch (error) {
+      lastError = error;
+      if (attempt >= maxAttempts) {
+        break;
+      }
+      const backoff = baseBackoffMs * 2 ** (attempt - 1);
+      await sleep(backoff);
+    }
+  }
+
+  throw new RetryAttemptsExceededError(
+    "Maximum fetch retry attempts exceeded",
+    attemptsUsed,
+    lastError,
+  );
+}
+
+async function runWithConcurrency<TInput, TResult>(
+  items: TInput[],
+  limit: number,
+  worker: (item: TInput) => Promise<TResult>,
+) {
+  const results: TResult[] = [];
+  let nextIndex = 0;
+
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const current = items[nextIndex];
+      nextIndex += 1;
+      results.push(await worker(current));
+    }
+  });
+
+  await Promise.all(runners);
+  return results;
+}
+
+async function finalizeIngestRunSafely(
+  runId: number | null,
+  input: {
+    status: "success" | "failed" | "skipped";
+    fetchedCount?: number;
+    upsertedCount?: number;
+    deactivatedCount?: number;
+    errorMessage?: string;
+  },
+) {
+  if (!runId) {
+    return;
+  }
+  try {
+    await finalizeIngestRun(runId, input);
+  } catch {
+    // Best effort: failing to write run-finalization metadata should not crash the whole ingest.
+  }
 }
 
 export async function ingestAllSources(): Promise<IngestSummary> {
+  const providerConcurrency = parsePositiveInt(
+    process.env.INGEST_PROVIDER_CONCURRENCY,
+    2,
+  );
+  const maxFetchAttempts = parsePositiveInt(process.env.INGEST_FETCH_MAX_ATTEMPTS, 3);
+  const baseBackoffMs = parsePositiveInt(process.env.INGEST_FETCH_BASE_BACKOFF_MS, 750);
+  const autoDisableFailureStreak = parsePositiveInt(
+    process.env.INGEST_AUTO_DISABLE_FAILURE_STREAK,
+    5,
+  );
+  const autoDisableCooldownHours = parsePositiveInt(
+    process.env.INGEST_AUTO_DISABLE_COOLDOWN_HOURS,
+    24,
+  );
+
   if (!hasDatabase()) {
     return {
       sourcesProcessed: 0,
+      skippedCount: 0,
       fetchedCount: 0,
       upsertedCount: 0,
       deactivatedCount: 0,
@@ -32,67 +261,214 @@ export async function ingestAllSources(): Promise<IngestSummary> {
           message: "DATABASE_URL is not configured.",
         },
       ],
+      sourceResults: [],
+      alerts: [
+        {
+          level: "critical",
+          code: "source_failure",
+          source: "database",
+          message: "DATABASE_URL is not configured.",
+        },
+      ],
     };
   }
 
   await ensureSchema();
-  const sources = getCompanySources().filter((source) => source.enabled);
+  let sources: CompanySourceConfig[];
+  try {
+    sources = getCompanySources().filter((source) => source.enabled);
+  } catch (error) {
+    const validation = getCompanySourcesValidation();
+    const message = toErrorMessage(error);
+    return {
+      sourcesProcessed: 0,
+      skippedCount: 0,
+      fetchedCount: 0,
+      upsertedCount: 0,
+      deactivatedCount: 0,
+      mode: "live",
+      errors: [{ source: "source-config", message }],
+      sourceResults: [],
+      alerts: [
+        {
+          level: "critical",
+          code: "source_failure",
+          source: "source-config",
+          message,
+        },
+        ...validation.issues
+          .filter((issue) => issue.level === "warning")
+          .slice(0, 5)
+          .map((issue) => ({
+            level: "warn" as const,
+            code: "source_failure" as const,
+            source: issue.sourceSlug ?? "source-config",
+            message: issue.message,
+          })),
+      ],
+    };
+  }
   const companyIds = await syncCompanySources(sources);
 
   const summary: IngestSummary = {
     sourcesProcessed: 0,
+    skippedCount: 0,
     fetchedCount: 0,
     upsertedCount: 0,
     deactivatedCount: 0,
     mode: "live",
     errors: [],
+    sourceResults: [],
+    alerts: [],
   };
 
+  const byProvider = new Map<CompanySourceConfig["provider"], CompanySourceConfig[]>();
   for (const source of sources) {
-    const companyId = companyIds.get(source.slug);
-    if (!companyId) {
-      continue;
-    }
+    const existing = byProvider.get(source.provider) ?? [];
+    existing.push(source);
+    byProvider.set(source.provider, existing);
+  }
 
-    const runId = await createIngestRun({
-      provider: source.provider,
-      companyId,
-    });
+  const processSource = async (source: CompanySourceConfig): Promise<SourceIngestResult> => {
+    const startedAt = Date.now();
+    let runId: number | null = null;
 
     try {
-      const jobs = await fetchSourceJobs(source);
-      const result = await upsertJobs(companyId, source.provider, jobs);
-
-      summary.sourcesProcessed += 1;
-      summary.fetchedCount += jobs.length;
-      summary.upsertedCount += result.upsertedCount;
-      summary.deactivatedCount += result.deactivatedCount;
-
-      if (runId) {
-        await finalizeIngestRun(runId, {
-          status: "success",
-          fetchedCount: jobs.length,
-          upsertedCount: result.upsertedCount,
-          deactivatedCount: result.deactivatedCount,
-        });
+      const companyId = companyIds.get(source.slug);
+      if (!companyId) {
+        return {
+          source: source.slug,
+          provider: source.provider,
+          status: "failed",
+          fetchedCount: 0,
+          upsertedCount: 0,
+          deactivatedCount: 0,
+          attemptCount: 0,
+          durationMs: 0,
+          errorCategory: "db_error",
+          errorMessage: "Missing company ID mapping for source",
+        };
       }
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unknown ingest failure";
 
-      summary.errors.push({
-        source: source.slug,
-        message,
+      const gate = await getSourceIngestGate({
+        companyId,
+        failureStreakThreshold: autoDisableFailureStreak,
+        cooldownHours: autoDisableCooldownHours,
       });
 
-      if (runId) {
-        await finalizeIngestRun(runId, {
-          status: "failed",
-          errorMessage: message,
+      runId = await createIngestRun({
+        provider: source.provider,
+        companyId,
+      });
+
+      if (gate.skip) {
+        const skipReason = `Auto-disabled after ${gate.consecutiveFailures} consecutive failures; cooling down for ${autoDisableCooldownHours}h`;
+        await finalizeIngestRunSafely(runId, {
+          status: "skipped",
+          errorMessage: skipReason,
         });
+
+        return {
+          source: source.slug,
+          provider: source.provider,
+          status: "skipped",
+          fetchedCount: 0,
+          upsertedCount: 0,
+          deactivatedCount: 0,
+          attemptCount: 0,
+          durationMs: Date.now() - startedAt,
+          errorCategory: "auto_disabled",
+          errorMessage: skipReason,
+          skipReason,
+        };
       }
+
+      const { value: jobs, attemptCount } = await withRetry(
+        () => fetchSourceJobs(source),
+        maxFetchAttempts,
+        baseBackoffMs,
+      );
+      const result = await upsertJobs(companyId, source.provider, jobs);
+      const durationMs = Date.now() - startedAt;
+
+      await finalizeIngestRunSafely(runId, {
+        status: "success",
+        fetchedCount: jobs.length,
+        upsertedCount: result.upsertedCount,
+        deactivatedCount: result.deactivatedCount,
+      });
+
+      return {
+        source: source.slug,
+        provider: source.provider,
+        status: "success",
+        fetchedCount: jobs.length,
+        upsertedCount: result.upsertedCount,
+        deactivatedCount: result.deactivatedCount,
+        attemptCount,
+        durationMs,
+      };
+    } catch (error) {
+      const rootError =
+        error instanceof RetryAttemptsExceededError ? error.causeError : error;
+      const message = toErrorMessage(rootError);
+      const durationMs = Date.now() - startedAt;
+      const errorCategory = classifyError(rootError);
+      const attemptCount =
+        error instanceof RetryAttemptsExceededError
+          ? error.attemptCount
+          : 0;
+
+      await finalizeIngestRunSafely(runId, {
+        status: "failed",
+        errorMessage: message,
+      });
+
+      return {
+        source: source.slug,
+        provider: source.provider,
+        status: "failed",
+        fetchedCount: 0,
+        upsertedCount: 0,
+        deactivatedCount: 0,
+        attemptCount,
+        durationMs,
+        errorCategory,
+        errorMessage: message,
+      };
+    }
+  };
+
+  for (const provider of ["greenhouse", "lever", "ashby"] as const) {
+    const providerSources = byProvider.get(provider) ?? [];
+    if (providerSources.length === 0) {
+      continue;
+    }
+    const providerResults = await runWithConcurrency(
+      providerSources,
+      providerConcurrency,
+      processSource,
+    );
+    summary.sourceResults.push(...providerResults);
+  }
+
+  for (const result of summary.sourceResults) {
+    summary.sourcesProcessed += 1;
+    summary.fetchedCount += result.fetchedCount;
+    summary.upsertedCount += result.upsertedCount;
+    summary.deactivatedCount += result.deactivatedCount;
+    if (result.status === "failed") {
+      summary.errors.push({
+        source: result.source,
+        message: result.errorMessage ?? "Unknown ingest failure",
+      });
+    }
+    if (result.status === "skipped") {
+      summary.skippedCount += 1;
     }
   }
+
+  summary.alerts = buildIngestAlerts(summary);
 
   return summary;
 }

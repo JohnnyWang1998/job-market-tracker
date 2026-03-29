@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ingestAllSources } from "@/lib/ingest";
+import { getIngestHealthResponse } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 function isAuthorized(request: NextRequest) {
-  const secret = process.env.CRON_SECRET;
+  const secret =
+    process.env.INGEST_HEALTH_SECRET ?? process.env.CRON_SECRET;
   if (!secret) {
     return false;
   }
@@ -18,14 +19,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const summary = await ingestAllSources();
-  const hasElevatedAlert = summary.alerts.some(
-    (alert) => alert.level === "warn" || alert.level === "critical",
-  );
-  const status =
-    summary.mode === "sample" || summary.errors.length > 0 || hasElevatedAlert
-      ? 207
-      : 200;
+  const hoursParam = request.nextUrl.searchParams.get("hours");
+  const parsed = hoursParam ? Number.parseInt(hoursParam, 10) : 168;
+  const hours = Number.isFinite(parsed) ? Math.max(1, Math.min(parsed, 24 * 90)) : 168;
 
-  return NextResponse.json(summary, { status });
+  const payload = await getIngestHealthResponse(hours);
+  return NextResponse.json(payload);
 }

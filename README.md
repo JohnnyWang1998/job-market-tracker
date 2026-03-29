@@ -31,6 +31,11 @@ Runtime behavior:
 
 If `DATABASE_URL` is not configured, the app falls back to the sample dataset in [`data/jobs-sample.json`](./data/jobs-sample.json).
 
+Important coverage note:
+
+- Greenhouse / Lever / Ashby public board APIs mostly expose current open postings, not full historical archives.
+- Historical charts are limited by how long this app has been ingesting and by the selected analytics window.
+
 ## Tech Stack
 
 - Next.js 14
@@ -54,6 +59,15 @@ Environment variables:
 
 - `DATABASE_URL` for Postgres
 - `CRON_SECRET` for the ingestion endpoint
+- `INGEST_HEALTH_SECRET` optional override secret for `/api/analytics/ingest-health` (falls back to `CRON_SECRET`)
+- `JOB_SOURCES_REGISTRY_PATH` file path to the source registry JSON (default `./data/source-registry.json`)
+- `JOB_SOURCES_JSON` to fully override the default source list
+- `JOB_SOURCES_APPEND_JSON` to append extra sources on top of defaults
+- `INGEST_PROVIDER_CONCURRENCY` max concurrent ingests per provider (default `2`)
+- `INGEST_FETCH_MAX_ATTEMPTS` fetch retries per source (default `3`)
+- `INGEST_FETCH_BASE_BACKOFF_MS` base backoff for retries in milliseconds (default `750`)
+- `INGEST_AUTO_DISABLE_FAILURE_STREAK` consecutive failures before temporary auto-disable (default `5`)
+- `INGEST_AUTO_DISABLE_COOLDOWN_HOURS` cooldown window for auto-disabled sources (default `24`)
 
 Open `http://localhost:3000`.
 
@@ -67,6 +81,57 @@ curl -H "Authorization: Bearer $CRON_SECRET" \
 ```
 
 The endpoint returns summary stats such as `sourcesProcessed`, `fetchedCount`, and `errors`.
+It also returns run-level `alerts` for failure spikes, skipped sources, and high retry volume.
+
+It now also includes per-source execution details (`sourceResults`) with:
+- `status`
+- `attemptCount`
+- `durationMs`
+- optional `errorCategory`
+
+When failure streak policy is triggered, a source run is recorded as `skipped` and excluded from fetch/upsert work until cooldown elapses.
+
+### Expanding Coverage Quickly
+
+Preferred flow: maintain `data/source-registry.json` (or set `JOB_SOURCES_REGISTRY_PATH`) and validate before ingest.
+
+You can still use `JOB_SOURCES_JSON` (override) and `JOB_SOURCES_APPEND_JSON` (append) when needed. Values must be JSON arrays of:
+
+```json
+{
+  "slug": "company-key",
+  "companyName": "Company Name",
+  "provider": "greenhouse | lever | ashby",
+  "boardToken": "public-board-token",
+  "enabled": true,
+  "hqLocation": "City, ST",
+  "priorityTier": "high | medium | low",
+  "ingestCadence": "twice_daily | daily | weekly",
+  "owner": "team-or-person",
+  "notes": "optional"
+}
+```
+
+Examples:
+
+```bash
+JOB_SOURCES_JSON='[{"slug":"stripe","companyName":"Stripe","provider":"greenhouse","boardToken":"stripe","enabled":true,"hqLocation":"San Francisco, CA"},{"slug":"openai","companyName":"OpenAI","provider":"ashby","boardToken":"openai","enabled":true,"hqLocation":"San Francisco, CA"}]'
+JOB_SOURCES_APPEND_JSON='[{"slug":"datadog","companyName":"Datadog","provider":"greenhouse","boardToken":"datadog","enabled":true,"hqLocation":"New York, NY"}]'
+```
+
+### Source Validation Dry Run
+
+Validate source config before ingest (no DB writes):
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  http://localhost:3000/api/cron/validate-sources
+```
+
+Response includes:
+- `ok`, `errors`, `warnings`
+- source counts (`sourceCount`, `enabledCount`, `providerCounts`)
+- `sampleSources` preview (`boardToken` is redacted)
 
 ### Production Ingest Trigger
 
@@ -78,6 +143,19 @@ curl -H "Authorization: Bearer $CRON_SECRET" \
 ```
 
 Current Vercel cron schedule is daily at `0 0 * * *` (UTC).
+
+### Ingest Health API
+
+Use this endpoint for source-level ingest reliability and trend monitoring:
+
+```bash
+curl -H "Authorization: Bearer $INGEST_HEALTH_SECRET" \
+  http://localhost:3000/api/analytics/ingest-health?hours=168
+```
+
+Response includes:
+- `bySource`: success/failure/skipped counts and recent status per source
+- `recentRuns`: latest run outcomes with counts and error messages
 
 ## Available Scripts
 
@@ -92,6 +170,7 @@ Current Vercel cron schedule is daily at `0 0 * * *` (UTC).
 src/
   app/
     api/cron/ingest/route.ts   Scheduled ingestion endpoint
+    api/cron/validate-sources/route.ts   Source config dry-run validator
     api/jobs/route.ts   API endpoint for job data
     page.tsx            Dashboard UI
     layout.tsx          App shell and metadata
@@ -103,6 +182,7 @@ src/
     ingest.ts           Ingestion workflow
 data/
   jobs-sample.json      Local sample dataset
+  source-registry.json  Source onboarding registry
 ```
 
 ## Notes

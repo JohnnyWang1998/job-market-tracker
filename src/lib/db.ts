@@ -2,6 +2,7 @@ import postgres from "postgres";
 import sampleJobs from "../../data/jobs-sample.json";
 import type { CompanySourceConfig } from "@/lib/company-sources";
 import type {
+  IngestHealthResponse,
   Job,
   JobsResponse,
   SeniorityTrendPoint,
@@ -242,7 +243,7 @@ export async function createIngestRun(input: {
 export async function finalizeIngestRun(
   runId: number,
   input: {
-    status: "success" | "failed";
+    status: "success" | "failed" | "skipped";
     fetchedCount?: number;
     upsertedCount?: number;
     deactivatedCount?: number;
@@ -265,6 +266,69 @@ export async function finalizeIngestRun(
       error_message = ${input.errorMessage ?? null}
     where id = ${runId}
   `;
+}
+
+export async function getSourceIngestGate(input: {
+  companyId: number;
+  failureStreakThreshold: number;
+  cooldownHours: number;
+}): Promise<{ skip: boolean; consecutiveFailures: number; lastFailureAt?: string }> {
+  const sql = getSql();
+  if (!sql) {
+    return { skip: false, consecutiveFailures: 0 };
+  }
+
+  const [latestFailure] = await sql<{ finished_at: string | null }[]>`
+    select finished_at
+    from ingest_runs
+    where company_id = ${input.companyId}
+      and status = 'failed'
+    order by finished_at desc nulls last
+    limit 1
+  `;
+
+  if (!latestFailure?.finished_at) {
+    return { skip: false, consecutiveFailures: 0 };
+  }
+
+  const lastFailureAt = latestFailure.finished_at;
+  const lastFailureDate = new Date(lastFailureAt);
+  if (Number.isNaN(lastFailureDate.getTime())) {
+    return { skip: false, consecutiveFailures: 0 };
+  }
+
+  const cooldownCutoff = new Date(Date.now() - input.cooldownHours * 60 * 60 * 1000);
+  if (lastFailureDate < cooldownCutoff) {
+    return { skip: false, consecutiveFailures: 0, lastFailureAt };
+  }
+
+  const recentRuns = await sql<Array<{ status: "success" | "failed" | "skipped" }>>`
+    select status
+    from ingest_runs
+    where company_id = ${input.companyId}
+      and finished_at is not null
+    order by finished_at desc
+    limit ${input.failureStreakThreshold}
+  `;
+
+  let consecutiveFailures = 0;
+  for (const run of recentRuns) {
+    if (run.status === "failed") {
+      consecutiveFailures += 1;
+      continue;
+    }
+    if (run.status === "success") {
+      break;
+    }
+  }
+
+  return {
+    skip:
+      consecutiveFailures >= input.failureStreakThreshold &&
+      input.failureStreakThreshold > 0,
+    consecutiveFailures,
+    lastFailureAt,
+  };
 }
 
 export async function upsertJobs(
@@ -342,7 +406,8 @@ export async function upsertJobs(
         salary_max = excluded.salary_max,
         salary_currency = excluded.salary_currency,
         technologies = excluded.technologies,
-        posted_at = excluded.posted_at,
+        -- Keep earliest observed posted_at so repeated ingests do not shift old jobs forward in time.
+        posted_at = least(jobs.posted_at, excluded.posted_at),
         last_seen_at = now(),
         is_active = true,
         missing_runs = 0,
@@ -475,7 +540,7 @@ export async function getJobsResponse(): Promise<JobsResponse> {
 export async function getSeniorityTrendResponse(
   months = 24,
 ): Promise<SeniorityTrendResponse> {
-  const clampedMonths = Math.max(1, Math.min(months, 36));
+  const clampedMonths = Math.max(1, Math.min(months, 120));
   const sql = getSql();
 
   if (!sql) {
@@ -538,5 +603,127 @@ export async function getSeniorityTrendResponse(
     series: monthKeys.map((month) => byMonth.get(month)!),
     fetchedAt: new Date().toISOString(),
     mode: "live",
+  };
+}
+
+export async function getIngestHealthResponse(
+  hours = 168,
+): Promise<IngestHealthResponse> {
+  const clampedHours = Math.max(1, Math.min(hours, 24 * 90));
+  const sql = getSql();
+
+  if (!sql) {
+    return {
+      hours: clampedHours,
+      mode: "sample",
+      fetchedAt: new Date().toISOString(),
+      bySource: [],
+      recentRuns: [],
+    };
+  }
+
+  await ensureSchema();
+
+  const bySource = await sql<
+    Array<{
+      source: string;
+      provider: Job["source"];
+      runs_total: number;
+      runs_success: number;
+      runs_failed: number;
+      runs_skipped: number;
+      total_fetched: number;
+      total_upserted: number;
+      total_deactivated: number;
+      last_success_at: string | null;
+      last_failure_at: string | null;
+    }>
+  >`
+    select
+      companies.slug as source,
+      companies.provider as provider,
+      count(*)::int as runs_total,
+      count(*) filter (where ingest_runs.status = 'success')::int as runs_success,
+      count(*) filter (where ingest_runs.status = 'failed')::int as runs_failed,
+      count(*) filter (where ingest_runs.status = 'skipped')::int as runs_skipped,
+      coalesce(sum(ingest_runs.fetched_count), 0)::int as total_fetched,
+      coalesce(sum(ingest_runs.upserted_count), 0)::int as total_upserted,
+      coalesce(sum(ingest_runs.deactivated_count), 0)::int as total_deactivated,
+      max(case when ingest_runs.status = 'success' then ingest_runs.finished_at end) as last_success_at,
+      max(case when ingest_runs.status = 'failed' then ingest_runs.finished_at end) as last_failure_at
+    from ingest_runs
+    inner join companies on companies.id = ingest_runs.company_id
+    where ingest_runs.started_at >= now() - (${clampedHours}::text || ' hours')::interval
+    group by companies.slug, companies.provider
+    order by runs_failed desc, runs_total desc, companies.slug asc
+  `;
+
+  const recentRuns = await sql<
+    Array<{
+      source: string;
+      provider: Job["source"];
+      started_at: string;
+      finished_at: string | null;
+      status: "running" | "success" | "failed" | "skipped";
+      fetched_count: number;
+      upserted_count: number;
+      deactivated_count: number;
+      error_message: string | null;
+    }>
+  >`
+    select
+      companies.slug as source,
+      companies.provider as provider,
+      ingest_runs.started_at,
+      ingest_runs.finished_at,
+      ingest_runs.status,
+      ingest_runs.fetched_count,
+      ingest_runs.upserted_count,
+      ingest_runs.deactivated_count,
+      ingest_runs.error_message
+    from ingest_runs
+    inner join companies on companies.id = ingest_runs.company_id
+    where ingest_runs.started_at >= now() - (${clampedHours}::text || ' hours')::interval
+    order by ingest_runs.started_at desc
+    limit 200
+  `;
+
+  return {
+    hours: clampedHours,
+    mode: "live",
+    fetchedAt: new Date().toISOString(),
+    bySource: bySource.map((row) => {
+      const completedRuns = row.runs_success + row.runs_failed;
+      const successRate =
+        completedRuns > 0
+          ? Number((row.runs_success / completedRuns).toFixed(4))
+          : 0;
+
+      return {
+        source: row.source,
+        provider: row.provider,
+        runsTotal: row.runs_total,
+        runsSuccess: row.runs_success,
+        runsFailed: row.runs_failed,
+        runsSkipped: row.runs_skipped,
+        totalFetched: row.total_fetched,
+        totalUpserted: row.total_upserted,
+        totalDeactivated: row.total_deactivated,
+        successRate,
+        lastSuccessAt: row.last_success_at ?? undefined,
+        lastFailureAt: row.last_failure_at ?? undefined,
+      };
+    }),
+    recentRuns: recentRuns.map((row) => ({
+      source: row.source,
+      provider: row.provider,
+      startedAt: row.started_at,
+      finishedAt: row.finished_at ?? undefined,
+      status: row.status,
+      fetchedCount: row.fetched_count,
+      upsertedCount: row.upserted_count,
+      deactivatedCount: row.deactivated_count,
+      errorMessage: row.error_message ?? undefined,
+    })),
   };
 }

@@ -47,3 +47,38 @@ export interface SeniorityTrendResponse {
   fetchedAt: string;
   mode: "live" | "sample";
 }
+
+export interface IngestHealthBySource {
+  source: string;
+  provider: JobSource;
+  runsTotal: number;
+  runsSuccess: number;
+  runsFailed: number;
+  runsSkipped: number;
+  totalFetched: number;
+  totalUpserted: number;
+  totalDeactivated: number;
+  successRate: number;
+  lastSuccessAt?: string;
+  lastFailureAt?: string;
+}
+
+export interface IngestRunPoint {
+  source: string;
+  provider: JobSource;
+  startedAt: string;
+  finishedAt?: string;
+  status: "running" | "success" | "failed" | "skipped";
+  fetchedCount: number;
+  upsertedCount: number;
+  deactivatedCount: number;
+  errorMessage?: string;
+}
+
+export interface IngestHealthResponse {
+  hours: number;
+  mode: "live" | "sample";
+  fetchedAt: string;
+  bySource: IngestHealthBySource[];
+  recentRuns: IngestRunPoint[];
+}
