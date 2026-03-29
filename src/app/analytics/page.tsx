@@ -14,11 +14,11 @@ import {
 import { NavTabs } from "@/components/nav-tabs";
 import type { SeniorityTrendResponse } from "@/lib/jobs";
 
-const WINDOW_OPTIONS = [24, 36, 60, 120] as const;
+const WINDOW_OPTIONS = [24, 12, 6] as const;
 
 export default function AnalyticsPage() {
   const [data, setData] = useState<SeniorityTrendResponse | null>(null);
-  const [months, setMonths] = useState<number>(60);
+  const [months, setMonths] = useState<number>(12);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
