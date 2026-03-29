@@ -185,15 +185,18 @@ Make macro analytics dependable for decision support.
 ## Batch 1 Execution Snapshot (2026-03-29)
 1. Validation mode: `registry_plus_env_append`
 2. Sources in run: `27` (`25` greenhouse, `1` lever, `1` ashby)
-3. Outcomes:
-- Successes: `21`
-- Failures: `6`
+3. Outcomes (v2 rerun after token/provider corrections):
+- Successes: `27`
+- Failures: `0`
 - Skipped: `0`
-- Retry-required sources: `6`
+- Retry-required sources: `0`
 4. Rates:
-- Success rate: `77.78%`
-- Failure rate: `22.22%`
-- Retry rate: `22.22%`
-5. Decision: `Hold before Batch 2`
-6. Blockers:
-- 404 failures on slugs `doordash`, `notion`, `canva`, `ramp`, `shopify`, `zendesk`
+- Success rate: `100%`
+- Failure rate: `0%`
+- Retry rate: `0%`
+5. Decision: `Ready for Batch 2`
+6. Corrections applied:
+- `doordash` -> `doordashusa` (greenhouse)
+- `notion` provider changed to `ashby`
+- `ramp` provider changed to `ashby`
+- Replaced `canva`, `shopify`, `zendesk` with `opendoor`, `tripadvisor`, `stitchfix`

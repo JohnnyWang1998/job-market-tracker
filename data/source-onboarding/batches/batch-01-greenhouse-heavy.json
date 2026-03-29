@@ -55,10 +55,10 @@
     "notes": "Batch 01 onboarding candidate (token unverified)"
   },
   {
-    "slug": "doordash",
+    "slug": "doordashusa",
     "companyName": "DoorDash",
     "provider": "greenhouse",
-    "boardToken": "doordash",
+    "boardToken": "doordashusa",
     "enabled": true,
     "priorityTier": "high",
     "ingestCadence": "daily",
@@ -112,7 +112,7 @@
   {
     "slug": "notion",
     "companyName": "Notion",
-    "provider": "greenhouse",
+    "provider": "ashby",
     "boardToken": "notion",
     "enabled": true,
     "priorityTier": "high",
@@ -132,10 +132,10 @@
     "notes": "Batch 01 onboarding candidate (token unverified)"
   },
   {
-    "slug": "canva",
-    "companyName": "Canva",
+    "slug": "opendoor",
+    "companyName": "Opendoor",
     "provider": "greenhouse",
-    "boardToken": "canva",
+    "boardToken": "opendoor",
     "enabled": true,
     "priorityTier": "high",
     "ingestCadence": "daily",
@@ -178,7 +178,7 @@
   {
     "slug": "ramp",
     "companyName": "Ramp",
-    "provider": "greenhouse",
+    "provider": "ashby",
     "boardToken": "ramp",
     "enabled": true,
     "priorityTier": "high",
@@ -253,10 +253,10 @@
     "notes": "Batch 01 onboarding candidate (token unverified)"
   },
   {
-    "slug": "shopify",
-    "companyName": "Shopify",
+    "slug": "tripadvisor",
+    "companyName": "Tripadvisor",
     "provider": "greenhouse",
-    "boardToken": "shopify",
+    "boardToken": "tripadvisor",
     "enabled": true,
     "priorityTier": "high",
     "ingestCadence": "daily",
@@ -264,10 +264,10 @@
     "notes": "Batch 01 onboarding candidate (token unverified)"
   },
   {
-    "slug": "zendesk",
-    "companyName": "Zendesk",
+    "slug": "stitchfix",
+    "companyName": "Stitch Fix",
     "provider": "greenhouse",
-    "boardToken": "zendesk",
+    "boardToken": "stitchfix",
     "enabled": true,
     "priorityTier": "high",
     "ingestCadence": "daily",

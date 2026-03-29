@@ -1,0 +1,22 @@
+{
+  "runDate": "2026-03-29",
+  "batch": "batch-01-greenhouse-heavy",
+  "revision": "v2",
+  "metrics": {
+    "mode": "live",
+    "sourcesProcessed": 27,
+    "skippedCount": 0,
+    "fetchedCount": 2744,
+    "upsertedCount": 2744,
+    "deactivatedCount": 58,
+    "failures": 0,
+    "successes": 27,
+    "retriedSources": 0,
+    "failureRate": 0,
+    "retryRate": 0,
+    "warnAlerts": 0,
+    "criticalAlerts": 0
+  },
+  "failedSources": [],
+  "alerts": []
+}
