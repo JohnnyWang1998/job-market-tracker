@@ -61,6 +61,9 @@ Environment variables:
 - `CRON_SECRET` for the ingestion endpoint
 - `JOB_SOURCES_JSON` to fully override the default source list
 - `JOB_SOURCES_APPEND_JSON` to append extra sources on top of defaults
+- `INGEST_PROVIDER_CONCURRENCY` max concurrent ingests per provider (default `2`)
+- `INGEST_FETCH_MAX_ATTEMPTS` fetch retries per source (default `3`)
+- `INGEST_FETCH_BASE_BACKOFF_MS` base backoff for retries in milliseconds (default `750`)
 
 Open `http://localhost:3000`.
 
@@ -74,6 +77,12 @@ curl -H "Authorization: Bearer $CRON_SECRET" \
 ```
 
 The endpoint returns summary stats such as `sourcesProcessed`, `fetchedCount`, and `errors`.
+
+It now also includes per-source execution details (`sourceResults`) with:
+- `status`
+- `attemptCount`
+- `durationMs`
+- optional `errorCategory`
 
 ### Expanding Coverage Quickly
 
@@ -107,6 +116,18 @@ curl -H "Authorization: Bearer $CRON_SECRET" \
 ```
 
 Current Vercel cron schedule is daily at `0 0 * * *` (UTC).
+
+### Ingest Health API
+
+Use this endpoint for source-level ingest reliability and trend monitoring:
+
+```bash
+curl http://localhost:3000/api/analytics/ingest-health?hours=168
+```
+
+Response includes:
+- `bySource`: success/failure counts and recent status per source
+- `recentRuns`: latest run outcomes with counts and error messages
 
 ## Available Scripts
 

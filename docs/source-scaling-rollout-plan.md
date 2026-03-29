@@ -3,51 +3,179 @@
 ## Objective
 Scale ATS source coverage (Greenhouse, Lever, Ashby) from a small curated list to broad market signal while maintaining data quality, system reliability, and predictable cost.
 
+## Scope And Constraints
+1. In scope:
+- Public ATS board ingestion for Greenhouse, Lever, and Ashby
+- Source onboarding, health monitoring, and quality controls
+- Macro analytics reliability improvements
+
+2. Out of scope for this plan:
+- LinkedIn/Indeed/Glassdoor integrations
+- Non-ATS scraping strategies
+- Paid data provider integrations
+
+3. Key constraints:
+- Public ATS APIs mostly expose current open postings, not full historical archives
+- Provider uptime and per-source data quality vary materially
+
+## Baseline (Capture Before Scaling)
+Record these before onboarding more sources:
+1. Total enabled sources
+2. Sources processed per run
+3. Run success rate
+4. Median and p95 ingest duration
+5. Jobs fetched, upserted, deactivated per run
+6. Duplicate ratio
+7. Missing critical fields ratio (`postedAt`, title, location)
+8. DB CPU and write IOPS during ingest window
+
+## KPI Definitions
+1. Source success rate:
+`successful_sources / processed_sources`
+
+2. Run success rate:
+`successful_runs / total_runs`
+
+3. Duplicate ratio:
+`duplicate_jobs / total_jobs_ingested`
+
+4. Missing critical fields ratio:
+`jobs_missing_critical_fields / total_jobs_ingested`
+
+5. Cost efficiency:
+`infra_cost_per_day / active_jobs_count * 1000`
+
+6. Source churn:
+`newly_failing_sources` and `recovered_sources` per day
+
 ## Phase 1 (Week 1-2): Foundation + First Scale
-1. Goal: grow to ~100-200 sources with stable ingest.
-2. Build: source onboarding workflow, source validation checks, ingest error taxonomy, per-source health dashboard.
-3. Guardrails: provider concurrency caps, retry with backoff, ingest timeout budget.
-4. Success metrics:
-- >=90% source success rate per run
-- p95 ingest duration within target
-- 0 DB saturation events
+1. Goal:
+Scale to ~100-200 sources with stable ingest and observable operations.
+
+2. Deliverables:
+- Source onboarding schema and validator
+- Error taxonomy (`network`, `429`, `provider_4xx`, `parse_error`, `db_error`)
+- Per-source health dashboard
+- Retry/backoff and concurrency controls by provider
+
+3. Guardrails:
+- Provider concurrency caps enabled
+- Time budget per run enforced
+- Alert on run failures and source failure spikes
+
+4. Exit criteria:
+- Source success rate >= 90%
+- Run success rate >= 95%
+- p95 ingest duration within agreed SLO
+- No DB saturation incidents
 
 ## Phase 2 (Week 3-4): Quality + Reliability
-1. Goal: improve data trust as volume increases.
-2. Build: duplicate detection, stronger normalization audits (`postedAt`, location, salary), stale-source auto-disable rules.
-3. Guardrails: anomaly alerts for sudden volume drops/spikes by provider/source.
-4. Success metrics:
-- Duplicate rate below threshold
-- Missing-critical-field rate trending down
+1. Goal:
+Improve trust in data as volume grows.
+
+2. Deliverables:
+- Duplicate detection and canonicalization rules
+- Normalization audits for `postedAt`, location, salary
+- Source auto-disable policy after repeated failures
+- Provider-level anomaly detection for volume shifts
+
+3. Guardrails:
+- Alert thresholds for unexpected volume drops/spikes
+- Manual review queue for high-impact anomalies
+
+4. Exit criteria:
+- Duplicate ratio below threshold
+- Missing critical fields ratio trending down week over week
 - Alert MTTR under target
 
 ## Phase 3 (Week 5-6): Broad Coverage Expansion
-1. Goal: scale to ~500+ sources without operational regressions.
-2. Build: batch onboarding by priority, tiered ingest cadence (high/medium/low frequency), infra tuning.
-3. Guardrails: run-budget limits (time/cost), safe-fail behavior during provider outages.
-4. Success metrics:
-- Sustained run success
-- Predictable infra cost per 1k jobs
-- Steady growth in unique active jobs
+1. Goal:
+Scale to ~500+ sources without operational regressions.
+
+2. Deliverables:
+- Prioritized source batches by relevance/quality
+- Tiered ingest cadence (high/medium/low)
+- Capacity tuning for DB and ingest workers
+
+3. Guardrails:
+- Hard cap on per-run source count to avoid overload
+- Cost and latency budgets enforced per day
+
+4. Exit criteria:
+- Stable run success at target scale
+- Predictable cost per 1k active jobs
+- Consistent growth in unique active jobs
 
 ## Phase 4 (Week 7+): Market Signal Maturity
-1. Goal: make macro analytics decision-grade.
-2. Build: confidence scoring, source weighting to reduce bias, historical backfill strategy where available.
-3. Guardrails: explicit UI coverage caveats (provider/company footprint transparency).
-4. Success metrics:
-- Stable month-over-month trend continuity
+1. Goal:
+Make macro analytics dependable for decision support.
+
+2. Deliverables:
+- Source confidence scoring
+- Coverage-weighted market indicators
+- Transparent UI caveats for source footprint and bias
+
+3. Exit criteria:
+- Month-over-month trend continuity is stable
 - Fewer unexplained trend discontinuities
+- Stakeholder confidence sign-off
 
-## Operational KPIs
-1. Ingest success rate by provider/source
-2. Jobs fetched/upserted/deactivated per run
-3. Duplicate ratio and normalization failure ratio
-4. Median and p95 ingest duration
-5. Cost per run and cost per 1k active jobs
-6. Source churn (newly failing vs recovered)
+## Weekly Execution Cadence
+1. Monday:
+- Approve source batch
+- Confirm guardrail thresholds
+- Verify capacity headroom
 
-## Immediate Next Actions
-1. Define onboarding schema and validation checklist for new sources.
-2. Create a Phase 1 target list (top 150 companies).
-3. Add run-level dashboard and alerts before bulk onboarding.
-4. Start with one provider-heavy batch first, then expand cross-provider.
+2. Mid-week:
+- Review ingest errors and source health
+- Triage anomalies and disable failing sources if needed
+- Validate KPI trajectory
+
+3. Friday:
+- Publish weekly scorecard
+- Decide next batch size and provider mix
+- Update risks and mitigations
+
+## Risk Register
+1. Coverage bias risk:
+- Risk: ATS-only coverage misses parts of tech market
+- Mitigation: disclose coverage scope and add weighting in analytics
+
+2. Reliability risk:
+- Risk: rate limits and provider instability
+- Mitigation: provider-specific backoff, retries, and load caps
+
+3. Data quality risk:
+- Risk: inconsistent dates/locations/salary fields
+- Mitigation: stricter normalization checks and quality dashboards
+
+4. Cost risk:
+- Risk: infra cost spikes with source growth
+- Mitigation: daily cost budget alarms and adaptive cadence
+
+## Phase 1 Immediate Task List
+1. Finalize source schema contract and validation rules.
+2. Define provider concurrency defaults and retry policy.
+3. Implement run and source health metrics with alerting.
+4. Produce top-150 source candidate list and batch into groups of 25.
+5. Run first onboarding batch and measure KPI deltas.
+6. Hold post-batch review and adjust batch size.
+
+## Decision Log (Keep Updated)
+1. Current max sources per run: `TBD`
+2. Provider concurrency caps: `2` (default via `INGEST_PROVIDER_CONCURRENCY`)
+3. Run schedule (UTC): `0 0 * * *`
+4. Failure threshold for auto-disable: `TBD`
+5. Duplicate policy version: `TBD`
+
+## Implementation Status (2026-03-28)
+1. Completed:
+- Provider-level ingestion concurrency control (`INGEST_PROVIDER_CONCURRENCY`)
+- Fetch retry with exponential backoff (`INGEST_FETCH_MAX_ATTEMPTS`, `INGEST_FETCH_BASE_BACKOFF_MS`)
+- Error categorization in ingest summary (`network`, `rate_limit`, `provider_4xx`, `provider_5xx`, `parse_error`, `db_error`, `unknown`)
+- Ingest health API for dashboarding: `/api/analytics/ingest-health?hours=168`
+
+2. Remaining high-priority items:
+- Source onboarding schema contract beyond env JSON
+- Alerting pipeline (run failure, source failure spike, anomaly detection)
+- Auto-disable policy after repeated failures

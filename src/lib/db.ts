@@ -2,6 +2,7 @@ import postgres from "postgres";
 import sampleJobs from "../../data/jobs-sample.json";
 import type { CompanySourceConfig } from "@/lib/company-sources";
 import type {
+  IngestHealthResponse,
   Job,
   JobsResponse,
   SeniorityTrendPoint,
@@ -539,5 +540,117 @@ export async function getSeniorityTrendResponse(
     series: monthKeys.map((month) => byMonth.get(month)!),
     fetchedAt: new Date().toISOString(),
     mode: "live",
+  };
+}
+
+export async function getIngestHealthResponse(
+  hours = 168,
+): Promise<IngestHealthResponse> {
+  const clampedHours = Math.max(1, Math.min(hours, 24 * 90));
+  const sql = getSql();
+
+  if (!sql) {
+    return {
+      hours: clampedHours,
+      mode: "sample",
+      fetchedAt: new Date().toISOString(),
+      bySource: [],
+      recentRuns: [],
+    };
+  }
+
+  await ensureSchema();
+
+  const bySource = await sql<
+    Array<{
+      source: string;
+      provider: Job["source"];
+      runs_total: number;
+      runs_success: number;
+      runs_failed: number;
+      total_fetched: number;
+      total_upserted: number;
+      total_deactivated: number;
+      last_success_at: string | null;
+      last_failure_at: string | null;
+    }>
+  >`
+    select
+      companies.slug as source,
+      companies.provider as provider,
+      count(*)::int as runs_total,
+      count(*) filter (where ingest_runs.status = 'success')::int as runs_success,
+      count(*) filter (where ingest_runs.status = 'failed')::int as runs_failed,
+      coalesce(sum(ingest_runs.fetched_count), 0)::int as total_fetched,
+      coalesce(sum(ingest_runs.upserted_count), 0)::int as total_upserted,
+      coalesce(sum(ingest_runs.deactivated_count), 0)::int as total_deactivated,
+      max(case when ingest_runs.status = 'success' then ingest_runs.finished_at end) as last_success_at,
+      max(case when ingest_runs.status = 'failed' then ingest_runs.finished_at end) as last_failure_at
+    from ingest_runs
+    inner join companies on companies.id = ingest_runs.company_id
+    where ingest_runs.started_at >= now() - (${clampedHours}::text || ' hours')::interval
+    group by companies.slug, companies.provider
+    order by runs_failed desc, runs_total desc, companies.slug asc
+  `;
+
+  const recentRuns = await sql<
+    Array<{
+      source: string;
+      provider: Job["source"];
+      started_at: string;
+      finished_at: string | null;
+      status: "running" | "success" | "failed";
+      fetched_count: number;
+      upserted_count: number;
+      deactivated_count: number;
+      error_message: string | null;
+    }>
+  >`
+    select
+      companies.slug as source,
+      companies.provider as provider,
+      ingest_runs.started_at,
+      ingest_runs.finished_at,
+      ingest_runs.status,
+      ingest_runs.fetched_count,
+      ingest_runs.upserted_count,
+      ingest_runs.deactivated_count,
+      ingest_runs.error_message
+    from ingest_runs
+    inner join companies on companies.id = ingest_runs.company_id
+    where ingest_runs.started_at >= now() - (${clampedHours}::text || ' hours')::interval
+    order by ingest_runs.started_at desc
+    limit 200
+  `;
+
+  return {
+    hours: clampedHours,
+    mode: "live",
+    fetchedAt: new Date().toISOString(),
+    bySource: bySource.map((row) => ({
+      source: row.source,
+      provider: row.provider,
+      runsTotal: row.runs_total,
+      runsSuccess: row.runs_success,
+      runsFailed: row.runs_failed,
+      totalFetched: row.total_fetched,
+      totalUpserted: row.total_upserted,
+      totalDeactivated: row.total_deactivated,
+      successRate:
+        row.runs_total > 0 ? Number((row.runs_success / row.runs_total).toFixed(4)) : 0,
+      lastSuccessAt: row.last_success_at ?? undefined,
+      lastFailureAt: row.last_failure_at ?? undefined,
+    })),
+    recentRuns: recentRuns.map((row) => ({
+      source: row.source,
+      provider: row.provider,
+      startedAt: row.started_at,
+      finishedAt: row.finished_at ?? undefined,
+      status: row.status,
+      fetchedCount: row.fetched_count,
+      upsertedCount: row.upserted_count,
+      deactivatedCount: row.deactivated_count,
+      errorMessage: row.error_message ?? undefined,
+    })),
   };
 }
