@@ -59,6 +59,7 @@ Environment variables:
 
 - `DATABASE_URL` for Postgres
 - `CRON_SECRET` for the ingestion endpoint
+- `INGEST_HEALTH_SECRET` optional override secret for `/api/analytics/ingest-health` (falls back to `CRON_SECRET`)
 - `JOB_SOURCES_REGISTRY_PATH` file path to the source registry JSON (default `./data/source-registry.json`)
 - `JOB_SOURCES_JSON` to fully override the default source list
 - `JOB_SOURCES_APPEND_JSON` to append extra sources on top of defaults
@@ -130,7 +131,7 @@ curl -H "Authorization: Bearer $CRON_SECRET" \
 Response includes:
 - `ok`, `errors`, `warnings`
 - source counts (`sourceCount`, `enabledCount`, `providerCounts`)
-- `sampleSources` preview
+- `sampleSources` preview (`boardToken` is redacted)
 
 ### Production Ingest Trigger
 
@@ -148,7 +149,8 @@ Current Vercel cron schedule is daily at `0 0 * * *` (UTC).
 Use this endpoint for source-level ingest reliability and trend monitoring:
 
 ```bash
-curl http://localhost:3000/api/analytics/ingest-health?hours=168
+curl -H "Authorization: Bearer $INGEST_HEALTH_SECRET" \
+  http://localhost:3000/api/analytics/ingest-health?hours=168
 ```
 
 Response includes:

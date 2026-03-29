@@ -211,6 +211,26 @@ async function runWithConcurrency<TInput, TResult>(
   return results;
 }
 
+async function finalizeIngestRunSafely(
+  runId: number | null,
+  input: {
+    status: "success" | "failed" | "skipped";
+    fetchedCount?: number;
+    upsertedCount?: number;
+    deactivatedCount?: number;
+    errorMessage?: string;
+  },
+) {
+  if (!runId) {
+    return;
+  }
+  try {
+    await finalizeIngestRun(runId, input);
+  } catch {
+    // Best effort: failing to write run-finalization metadata should not crash the whole ingest.
+  }
+}
+
 export async function ingestAllSources(): Promise<IngestSummary> {
   const providerConcurrency = parsePositiveInt(
     process.env.INGEST_PROVIDER_CONCURRENCY,
@@ -310,59 +330,59 @@ export async function ingestAllSources(): Promise<IngestSummary> {
   }
 
   const processSource = async (source: CompanySourceConfig): Promise<SourceIngestResult> => {
-    const companyId = companyIds.get(source.slug);
-    if (!companyId) {
-      return {
-        source: source.slug,
-        provider: source.provider,
-        status: "failed",
-        fetchedCount: 0,
-        upsertedCount: 0,
-        deactivatedCount: 0,
-        attemptCount: 0,
-        durationMs: 0,
-        errorCategory: "db_error",
-        errorMessage: "Missing company ID mapping for source",
-      };
-    }
-
     const startedAt = Date.now();
-    const gate = await getSourceIngestGate({
-      companyId,
-      failureStreakThreshold: autoDisableFailureStreak,
-      cooldownHours: autoDisableCooldownHours,
-    });
+    let runId: number | null = null;
 
-    const runId = await createIngestRun({
-      provider: source.provider,
-      companyId,
-    });
+    try {
+      const companyId = companyIds.get(source.slug);
+      if (!companyId) {
+        return {
+          source: source.slug,
+          provider: source.provider,
+          status: "failed",
+          fetchedCount: 0,
+          upsertedCount: 0,
+          deactivatedCount: 0,
+          attemptCount: 0,
+          durationMs: 0,
+          errorCategory: "db_error",
+          errorMessage: "Missing company ID mapping for source",
+        };
+      }
 
-    if (gate.skip) {
-      const skipReason = `Auto-disabled after ${gate.consecutiveFailures} consecutive failures; cooling down for ${autoDisableCooldownHours}h`;
-      if (runId) {
-        await finalizeIngestRun(runId, {
+      const gate = await getSourceIngestGate({
+        companyId,
+        failureStreakThreshold: autoDisableFailureStreak,
+        cooldownHours: autoDisableCooldownHours,
+      });
+
+      runId = await createIngestRun({
+        provider: source.provider,
+        companyId,
+      });
+
+      if (gate.skip) {
+        const skipReason = `Auto-disabled after ${gate.consecutiveFailures} consecutive failures; cooling down for ${autoDisableCooldownHours}h`;
+        await finalizeIngestRunSafely(runId, {
           status: "skipped",
           errorMessage: skipReason,
         });
+
+        return {
+          source: source.slug,
+          provider: source.provider,
+          status: "skipped",
+          fetchedCount: 0,
+          upsertedCount: 0,
+          deactivatedCount: 0,
+          attemptCount: 0,
+          durationMs: Date.now() - startedAt,
+          errorCategory: "auto_disabled",
+          errorMessage: skipReason,
+          skipReason,
+        };
       }
 
-      return {
-        source: source.slug,
-        provider: source.provider,
-        status: "skipped",
-        fetchedCount: 0,
-        upsertedCount: 0,
-        deactivatedCount: 0,
-        attemptCount: 0,
-        durationMs: Date.now() - startedAt,
-        errorCategory: "auto_disabled",
-        errorMessage: skipReason,
-        skipReason,
-      };
-    }
-
-    try {
       const { value: jobs, attemptCount } = await withRetry(
         () => fetchSourceJobs(source),
         maxFetchAttempts,
@@ -371,14 +391,12 @@ export async function ingestAllSources(): Promise<IngestSummary> {
       const result = await upsertJobs(companyId, source.provider, jobs);
       const durationMs = Date.now() - startedAt;
 
-      if (runId) {
-        await finalizeIngestRun(runId, {
-          status: "success",
-          fetchedCount: jobs.length,
-          upsertedCount: result.upsertedCount,
-          deactivatedCount: result.deactivatedCount,
-        });
-      }
+      await finalizeIngestRunSafely(runId, {
+        status: "success",
+        fetchedCount: jobs.length,
+        upsertedCount: result.upsertedCount,
+        deactivatedCount: result.deactivatedCount,
+      });
 
       return {
         source: source.slug,
@@ -399,14 +417,12 @@ export async function ingestAllSources(): Promise<IngestSummary> {
       const attemptCount =
         error instanceof RetryAttemptsExceededError
           ? error.attemptCount
-          : maxFetchAttempts;
+          : 0;
 
-      if (runId) {
-        await finalizeIngestRun(runId, {
-          status: "failed",
-          errorMessage: message,
-        });
-      }
+      await finalizeIngestRunSafely(runId, {
+        status: "failed",
+        errorMessage: message,
+      });
 
       return {
         source: source.slug,

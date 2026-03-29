@@ -32,6 +32,11 @@ export async function GET(request: NextRequest) {
     providerCounts[source.provider] += 1;
   }
 
+  const sampleSources = validation.sources.slice(0, 20).map((source) => ({
+    ...source,
+    boardToken: "[redacted]",
+  }));
+
   return NextResponse.json(
     {
       ok: errors.length === 0,
@@ -42,7 +47,7 @@ export async function GET(request: NextRequest) {
       providerCounts,
       errors,
       warnings,
-      sampleSources: validation.sources.slice(0, 20),
+      sampleSources,
     },
     { status: errors.length > 0 ? 422 : 200 },
   );
