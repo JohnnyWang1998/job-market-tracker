@@ -35,6 +35,17 @@ interface SourceIngestResult {
   skipReason?: string;
 }
 
+interface IngestAlert {
+  level: "info" | "warn" | "critical";
+  code:
+    | "source_failure"
+    | "source_skipped"
+    | "failure_spike"
+    | "high_retry_volume";
+  message: string;
+  source?: string;
+}
+
 class RetryAttemptsExceededError extends Error {
   attemptCount: number;
   causeError: unknown;
@@ -56,6 +67,7 @@ export interface IngestSummary {
   mode: "live" | "sample";
   errors: Array<{ source: string; message: string }>;
   sourceResults: SourceIngestResult[];
+  alerts: IngestAlert[];
 }
 
 function parsePositiveInt(raw: string | undefined, fallback: number) {
@@ -99,6 +111,56 @@ function sleep(ms: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function buildIngestAlerts(summary: IngestSummary): IngestAlert[] {
+  const alerts: IngestAlert[] = [];
+
+  for (const result of summary.sourceResults) {
+    if (result.status === "failed") {
+      alerts.push({
+        level: "warn",
+        code: "source_failure",
+        source: result.source,
+        message: `Source ${result.source} failed: ${result.errorMessage ?? "unknown error"}`,
+      });
+    }
+    if (result.status === "skipped") {
+      alerts.push({
+        level: "warn",
+        code: "source_skipped",
+        source: result.source,
+        message: `Source ${result.source} skipped: ${result.skipReason ?? "auto-disabled"}`,
+      });
+    }
+  }
+
+  const failedCount = summary.sourceResults.filter(
+    (result) => result.status === "failed",
+  ).length;
+  const highRetryCount = summary.sourceResults.filter(
+    (result) => result.status === "success" && result.attemptCount > 1,
+  ).length;
+  const processedCount = summary.sourceResults.length;
+  const failureRatio = processedCount > 0 ? failedCount / processedCount : 0;
+
+  if (failureRatio >= 0.2 && failedCount > 0) {
+    alerts.push({
+      level: failureRatio >= 0.5 ? "critical" : "warn",
+      code: "failure_spike",
+      message: `Failure spike detected: ${failedCount}/${processedCount} sources failed in this run`,
+    });
+  }
+
+  if (highRetryCount >= 3) {
+    alerts.push({
+      level: "info",
+      code: "high_retry_volume",
+      message: `${highRetryCount} sources required retries in this run`,
+    });
+  }
+
+  return alerts;
 }
 
 async function withRetry<T>(
@@ -180,6 +242,14 @@ export async function ingestAllSources(): Promise<IngestSummary> {
         },
       ],
       sourceResults: [],
+      alerts: [
+        {
+          level: "critical",
+          code: "source_failure",
+          source: "database",
+          message: "DATABASE_URL is not configured.",
+        },
+      ],
     };
   }
 
@@ -196,6 +266,7 @@ export async function ingestAllSources(): Promise<IngestSummary> {
     mode: "live",
     errors: [],
     sourceResults: [],
+    alerts: [],
   };
 
   const byProvider = new Map<CompanySourceConfig["provider"], CompanySourceConfig[]>();
@@ -347,6 +418,8 @@ export async function ingestAllSources(): Promise<IngestSummary> {
       summary.skippedCount += 1;
     }
   }
+
+  summary.alerts = buildIngestAlerts(summary);
 
   return summary;
 }

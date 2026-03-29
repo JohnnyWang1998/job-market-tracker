@@ -79,6 +79,7 @@ curl -H "Authorization: Bearer $CRON_SECRET" \
 ```
 
 The endpoint returns summary stats such as `sourcesProcessed`, `fetchedCount`, and `errors`.
+It also returns run-level `alerts` for failure spikes, skipped sources, and high retry volume.
 
 It now also includes per-source execution details (`sourceResults`) with:
 - `status`

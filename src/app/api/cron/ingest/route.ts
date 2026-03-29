@@ -19,8 +19,13 @@ export async function GET(request: NextRequest) {
   }
 
   const summary = await ingestAllSources();
+  const hasElevatedAlert = summary.alerts.some(
+    (alert) => alert.level === "warn" || alert.level === "critical",
+  );
   const status =
-    summary.mode === "sample" || summary.errors.length > 0 ? 207 : 200;
+    summary.mode === "sample" || summary.errors.length > 0 || hasElevatedAlert
+      ? 207
+      : 200;
 
   return NextResponse.json(summary, { status });
 }
