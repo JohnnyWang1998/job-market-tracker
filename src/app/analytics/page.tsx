@@ -14,8 +14,11 @@ import {
 import { NavTabs } from "@/components/nav-tabs";
 import type { SeniorityTrendResponse } from "@/lib/jobs";
 
+const WINDOW_OPTIONS = [24, 36, 60, 120] as const;
+
 export default function AnalyticsPage() {
   const [data, setData] = useState<SeniorityTrendResponse | null>(null);
+  const [months, setMonths] = useState<number>(60);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,9 +28,12 @@ export default function AnalyticsPage() {
         setLoading(true);
         setError(null);
 
-        const response = await fetch("/api/analytics/seniority?months=24", {
-          cache: "no-store",
-        });
+        const response = await fetch(
+          `/api/analytics/seniority?months=${months}`,
+          {
+            cache: "no-store",
+          },
+        );
         if (!response.ok) {
           throw new Error(`Request failed with status ${response.status}`);
         }
@@ -44,7 +50,7 @@ export default function AnalyticsPage() {
     };
 
     void load();
-  }, []);
+  }, [months]);
 
   const totalByLevel = useMemo(() => {
     const series = data?.series ?? [];
@@ -72,13 +78,29 @@ export default function AnalyticsPage() {
               Macro Tech Hiring Analytics
             </h1>
             <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-              24-month trend of role volume by seniority level.
+              {months}-month trend of role volume by seniority level.
             </p>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
               {lastUpdated ? `Last computed: ${lastUpdated}` : "Loading..."}
             </p>
           </div>
-          <NavTabs />
+          <div className="flex items-center gap-3">
+            <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+              History
+            </label>
+            <select
+              value={months}
+              onChange={(event) => setMonths(Number(event.target.value))}
+              className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+            >
+              {WINDOW_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option} months
+                </option>
+              ))}
+            </select>
+            <NavTabs />
+          </div>
         </header>
 
         {error ? (
@@ -88,13 +110,13 @@ export default function AnalyticsPage() {
         ) : null}
 
         <section className="grid gap-4 sm:grid-cols-3">
-          <MetricCard label="Junior (24m)" value={totalByLevel.junior} />
-          <MetricCard label="Mid (24m)" value={totalByLevel.mid} />
-          <MetricCard label="Senior (24m)" value={totalByLevel.senior} />
+          <MetricCard label={`Junior (${months}m)`} value={totalByLevel.junior} />
+          <MetricCard label={`Mid (${months}m)`} value={totalByLevel.mid} />
+          <MetricCard label={`Senior (${months}m)`} value={totalByLevel.senior} />
         </section>
 
         <section className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:ring-zinc-800">
-          <h2 className="text-sm font-semibold">Monthly Trend (24 Months)</h2>
+          <h2 className="text-sm font-semibold">Monthly Trend ({months} Months)</h2>
           {!data || loading ? (
             <div className="py-10 text-center text-sm text-zinc-500 dark:text-zinc-400">
               Loading trend data...

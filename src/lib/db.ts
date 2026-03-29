@@ -342,7 +342,8 @@ export async function upsertJobs(
         salary_max = excluded.salary_max,
         salary_currency = excluded.salary_currency,
         technologies = excluded.technologies,
-        posted_at = excluded.posted_at,
+        -- Keep earliest observed posted_at so repeated ingests do not shift old jobs forward in time.
+        posted_at = least(jobs.posted_at, excluded.posted_at),
         last_seen_at = now(),
         is_active = true,
         missing_runs = 0,
@@ -475,7 +476,7 @@ export async function getJobsResponse(): Promise<JobsResponse> {
 export async function getSeniorityTrendResponse(
   months = 24,
 ): Promise<SeniorityTrendResponse> {
-  const clampedMonths = Math.max(1, Math.min(months, 36));
+  const clampedMonths = Math.max(1, Math.min(months, 120));
   const sql = getSql();
 
   if (!sql) {

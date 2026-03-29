@@ -31,6 +31,11 @@ Runtime behavior:
 
 If `DATABASE_URL` is not configured, the app falls back to the sample dataset in [`data/jobs-sample.json`](./data/jobs-sample.json).
 
+Important coverage note:
+
+- Greenhouse / Lever / Ashby public board APIs mostly expose current open postings, not full historical archives.
+- Historical charts are limited by how long this app has been ingesting and by the selected analytics window.
+
 ## Tech Stack
 
 - Next.js 14
@@ -54,6 +59,8 @@ Environment variables:
 
 - `DATABASE_URL` for Postgres
 - `CRON_SECRET` for the ingestion endpoint
+- `JOB_SOURCES_JSON` to fully override the default source list
+- `JOB_SOURCES_APPEND_JSON` to append extra sources on top of defaults
 
 Open `http://localhost:3000`.
 
@@ -67,6 +74,28 @@ curl -H "Authorization: Bearer $CRON_SECRET" \
 ```
 
 The endpoint returns summary stats such as `sourcesProcessed`, `fetchedCount`, and `errors`.
+
+### Expanding Coverage Quickly
+
+Use `JOB_SOURCES_JSON` or `JOB_SOURCES_APPEND_JSON` to ingest many more companies without code changes. Values must be JSON arrays of:
+
+```json
+{
+  "slug": "company-key",
+  "companyName": "Company Name",
+  "provider": "greenhouse | lever | ashby",
+  "boardToken": "public-board-token",
+  "enabled": true,
+  "hqLocation": "City, ST"
+}
+```
+
+Examples:
+
+```bash
+JOB_SOURCES_JSON='[{"slug":"stripe","companyName":"Stripe","provider":"greenhouse","boardToken":"stripe","enabled":true,"hqLocation":"San Francisco, CA"},{"slug":"openai","companyName":"OpenAI","provider":"ashby","boardToken":"openai","enabled":true,"hqLocation":"San Francisco, CA"}]'
+JOB_SOURCES_APPEND_JSON='[{"slug":"datadog","companyName":"Datadog","provider":"greenhouse","boardToken":"datadog","enabled":true,"hqLocation":"New York, NY"}]'
+```
 
 ### Production Ingest Trigger
 
