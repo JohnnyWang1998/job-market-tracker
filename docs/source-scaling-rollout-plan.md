@@ -181,3 +181,19 @@ Make macro analytics dependable for decision support.
 2. Remaining high-priority items:
 - Alerting pipeline (run failure, source failure spike, anomaly detection)
 - Batch onboarding workflow (target list, provider-first rollout, runbook)
+
+## Batch 1 Execution Snapshot (2026-03-29)
+1. Validation mode: `registry_plus_env_append`
+2. Sources in run: `27` (`25` greenhouse, `1` lever, `1` ashby)
+3. Outcomes:
+- Successes: `21`
+- Failures: `6`
+- Skipped: `0`
+- Retry-required sources: `6`
+4. Rates:
+- Success rate: `77.78%`
+- Failure rate: `22.22%`
+- Retry rate: `22.22%`
+5. Decision: `Hold before Batch 2`
+6. Blockers:
+- 404 failures on slugs `doordash`, `notion`, `canva`, `ramp`, `shopify`, `zendesk`

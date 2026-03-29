@@ -1,0 +1,101 @@
+{
+  "runDate": "2026-03-29",
+  "batch": "batch-01-greenhouse-heavy",
+  "metrics": {
+    "mode": "live",
+    "sourcesProcessed": 27,
+    "skippedCount": 0,
+    "fetchedCount": 2433,
+    "upsertedCount": 2433,
+    "deactivatedCount": 58,
+    "failures": 6,
+    "successes": 21,
+    "retriedSources": 6,
+    "failureRate": 0.2222222222222222,
+    "retryRate": 0.2222222222222222,
+    "warnAlerts": 7,
+    "criticalAlerts": 0
+  },
+  "failedSources": [
+    {
+      "source": "doordash",
+      "provider": "greenhouse",
+      "errorCategory": "provider_4xx",
+      "errorMessage": "Greenhouse request failed for doordash: 404"
+    },
+    {
+      "source": "notion",
+      "provider": "greenhouse",
+      "errorCategory": "provider_4xx",
+      "errorMessage": "Greenhouse request failed for notion: 404"
+    },
+    {
+      "source": "canva",
+      "provider": "greenhouse",
+      "errorCategory": "provider_4xx",
+      "errorMessage": "Greenhouse request failed for canva: 404"
+    },
+    {
+      "source": "ramp",
+      "provider": "greenhouse",
+      "errorCategory": "provider_4xx",
+      "errorMessage": "Greenhouse request failed for ramp: 404"
+    },
+    {
+      "source": "shopify",
+      "provider": "greenhouse",
+      "errorCategory": "provider_4xx",
+      "errorMessage": "Greenhouse request failed for shopify: 404"
+    },
+    {
+      "source": "zendesk",
+      "provider": "greenhouse",
+      "errorCategory": "provider_4xx",
+      "errorMessage": "Greenhouse request failed for zendesk: 404"
+    }
+  ],
+  "alerts": [
+    {
+      "level": "warn",
+      "code": "source_failure",
+      "source": "doordash",
+      "message": "Source doordash failed: Greenhouse request failed for doordash: 404"
+    },
+    {
+      "level": "warn",
+      "code": "source_failure",
+      "source": "notion",
+      "message": "Source notion failed: Greenhouse request failed for notion: 404"
+    },
+    {
+      "level": "warn",
+      "code": "source_failure",
+      "source": "canva",
+      "message": "Source canva failed: Greenhouse request failed for canva: 404"
+    },
+    {
+      "level": "warn",
+      "code": "source_failure",
+      "source": "ramp",
+      "message": "Source ramp failed: Greenhouse request failed for ramp: 404"
+    },
+    {
+      "level": "warn",
+      "code": "source_failure",
+      "source": "shopify",
+      "message": "Source shopify failed: Greenhouse request failed for shopify: 404"
+    },
+    {
+      "level": "warn",
+      "code": "source_failure",
+      "source": "zendesk",
+      "message": "Source zendesk failed: Greenhouse request failed for zendesk: 404"
+    },
+    {
+      "level": "warn",
+      "code": "failure_spike",
+      "source": null,
+      "message": "Failure spike detected: 6/27 sources failed in this run"
+    }
+  ]
+}
