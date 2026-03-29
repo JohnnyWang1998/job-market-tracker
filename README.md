@@ -64,6 +64,8 @@ Environment variables:
 - `INGEST_PROVIDER_CONCURRENCY` max concurrent ingests per provider (default `2`)
 - `INGEST_FETCH_MAX_ATTEMPTS` fetch retries per source (default `3`)
 - `INGEST_FETCH_BASE_BACKOFF_MS` base backoff for retries in milliseconds (default `750`)
+- `INGEST_AUTO_DISABLE_FAILURE_STREAK` consecutive failures before temporary auto-disable (default `5`)
+- `INGEST_AUTO_DISABLE_COOLDOWN_HOURS` cooldown window for auto-disabled sources (default `24`)
 
 Open `http://localhost:3000`.
 
@@ -83,6 +85,8 @@ It now also includes per-source execution details (`sourceResults`) with:
 - `attemptCount`
 - `durationMs`
 - optional `errorCategory`
+
+When failure streak policy is triggered, a source run is recorded as `skipped` and excluded from fetch/upsert work until cooldown elapses.
 
 ### Expanding Coverage Quickly
 
@@ -126,7 +130,7 @@ curl http://localhost:3000/api/analytics/ingest-health?hours=168
 ```
 
 Response includes:
-- `bySource`: success/failure counts and recent status per source
+- `bySource`: success/failure/skipped counts and recent status per source
 - `recentRuns`: latest run outcomes with counts and error messages
 
 ## Available Scripts

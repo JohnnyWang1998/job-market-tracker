@@ -165,7 +165,7 @@ Make macro analytics dependable for decision support.
 1. Current max sources per run: `TBD`
 2. Provider concurrency caps: `2` (default via `INGEST_PROVIDER_CONCURRENCY`)
 3. Run schedule (UTC): `0 0 * * *`
-4. Failure threshold for auto-disable: `TBD`
+4. Failure threshold for auto-disable: `5` failures with `24h` cooldown by default (`INGEST_AUTO_DISABLE_FAILURE_STREAK`, `INGEST_AUTO_DISABLE_COOLDOWN_HOURS`)
 5. Duplicate policy version: `TBD`
 
 ## Implementation Status (2026-03-28)
@@ -174,8 +174,8 @@ Make macro analytics dependable for decision support.
 - Fetch retry with exponential backoff (`INGEST_FETCH_MAX_ATTEMPTS`, `INGEST_FETCH_BASE_BACKOFF_MS`)
 - Error categorization in ingest summary (`network`, `rate_limit`, `provider_4xx`, `provider_5xx`, `parse_error`, `db_error`, `unknown`)
 - Ingest health API for dashboarding: `/api/analytics/ingest-health?hours=168`
+- Auto-disable policy for repeated failures with cooldown (`skipped` runs)
 
 2. Remaining high-priority items:
 - Source onboarding schema contract beyond env JSON
 - Alerting pipeline (run failure, source failure spike, anomaly detection)
-- Auto-disable policy after repeated failures

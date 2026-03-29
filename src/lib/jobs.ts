@@ -54,6 +54,7 @@ export interface IngestHealthBySource {
   runsTotal: number;
   runsSuccess: number;
   runsFailed: number;
+  runsSkipped: number;
   totalFetched: number;
   totalUpserted: number;
   totalDeactivated: number;
@@ -67,7 +68,7 @@ export interface IngestRunPoint {
   provider: JobSource;
   startedAt: string;
   finishedAt?: string;
-  status: "running" | "success" | "failed";
+  status: "running" | "success" | "failed" | "skipped";
   fetchedCount: number;
   upsertedCount: number;
   deactivatedCount: number;

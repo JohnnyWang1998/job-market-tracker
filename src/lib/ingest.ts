@@ -3,6 +3,7 @@ import {
   createIngestRun,
   ensureSchema,
   finalizeIngestRun,
+  getSourceIngestGate,
   hasDatabase,
   syncCompanySources,
   upsertJobs,
@@ -11,6 +12,7 @@ import { fetchSourceJobs } from "@/lib/providers";
 import type { CompanySourceConfig } from "@/lib/company-sources";
 
 type IngestErrorCategory =
+  | "auto_disabled"
   | "network"
   | "rate_limit"
   | "provider_4xx"
@@ -22,7 +24,7 @@ type IngestErrorCategory =
 interface SourceIngestResult {
   source: string;
   provider: CompanySourceConfig["provider"];
-  status: "success" | "failed";
+  status: "success" | "failed" | "skipped";
   fetchedCount: number;
   upsertedCount: number;
   deactivatedCount: number;
@@ -30,6 +32,7 @@ interface SourceIngestResult {
   durationMs: number;
   errorCategory?: IngestErrorCategory;
   errorMessage?: string;
+  skipReason?: string;
 }
 
 class RetryAttemptsExceededError extends Error {
@@ -46,6 +49,7 @@ class RetryAttemptsExceededError extends Error {
 
 export interface IngestSummary {
   sourcesProcessed: number;
+  skippedCount: number;
   fetchedCount: number;
   upsertedCount: number;
   deactivatedCount: number;
@@ -152,10 +156,19 @@ export async function ingestAllSources(): Promise<IngestSummary> {
   );
   const maxFetchAttempts = parsePositiveInt(process.env.INGEST_FETCH_MAX_ATTEMPTS, 3);
   const baseBackoffMs = parsePositiveInt(process.env.INGEST_FETCH_BASE_BACKOFF_MS, 750);
+  const autoDisableFailureStreak = parsePositiveInt(
+    process.env.INGEST_AUTO_DISABLE_FAILURE_STREAK,
+    5,
+  );
+  const autoDisableCooldownHours = parsePositiveInt(
+    process.env.INGEST_AUTO_DISABLE_COOLDOWN_HOURS,
+    24,
+  );
 
   if (!hasDatabase()) {
     return {
       sourcesProcessed: 0,
+      skippedCount: 0,
       fetchedCount: 0,
       upsertedCount: 0,
       deactivatedCount: 0,
@@ -176,6 +189,7 @@ export async function ingestAllSources(): Promise<IngestSummary> {
 
   const summary: IngestSummary = {
     sourcesProcessed: 0,
+    skippedCount: 0,
     fetchedCount: 0,
     upsertedCount: 0,
     deactivatedCount: 0,
@@ -209,10 +223,40 @@ export async function ingestAllSources(): Promise<IngestSummary> {
     }
 
     const startedAt = Date.now();
+    const gate = await getSourceIngestGate({
+      companyId,
+      failureStreakThreshold: autoDisableFailureStreak,
+      cooldownHours: autoDisableCooldownHours,
+    });
+
     const runId = await createIngestRun({
       provider: source.provider,
       companyId,
     });
+
+    if (gate.skip) {
+      const skipReason = `Auto-disabled after ${gate.consecutiveFailures} consecutive failures; cooling down for ${autoDisableCooldownHours}h`;
+      if (runId) {
+        await finalizeIngestRun(runId, {
+          status: "skipped",
+          errorMessage: skipReason,
+        });
+      }
+
+      return {
+        source: source.slug,
+        provider: source.provider,
+        status: "skipped",
+        fetchedCount: 0,
+        upsertedCount: 0,
+        deactivatedCount: 0,
+        attemptCount: 0,
+        durationMs: Date.now() - startedAt,
+        errorCategory: "auto_disabled",
+        errorMessage: skipReason,
+        skipReason,
+      };
+    }
 
     try {
       const { value: jobs, attemptCount } = await withRetry(
@@ -298,6 +342,9 @@ export async function ingestAllSources(): Promise<IngestSummary> {
         source: result.source,
         message: result.errorMessage ?? "Unknown ingest failure",
       });
+    }
+    if (result.status === "skipped") {
+      summary.skippedCount += 1;
     }
   }
 
